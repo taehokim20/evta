@@ -1,8 +1,18 @@
+### Error Handling ###
+import warnings
+import logging
+import absl.logging
+logging.root.removeHandler(absl.logging._absl_handler)
+absl.logging._warn_preinit_stderr = False
+import sys
+import os
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
+
 import torch
 import time
 from torchvision import datasets, transforms
 from models.vgg_maxpool import VGG
-import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '4'
 import _pickle as cPickle
 import tensorflow as tf
@@ -11,10 +21,9 @@ from tvm import relay
 import numpy as np
 from tvm import autotvm
 import tvm.relay.testing
-from tvm autotvm.tuner import XGBTuner, GATuner, RandomTuner, GridSearchTuner
-import tvm.contrib.graph_runtime as graph_runtime
+from tvm.autotvm.tuner import XGBTuner, GATuner, RandomTuner, GridSearchTuner
 from tvm import rpc
-from tvm.contrib import utils, ndk
+from tvm.contrib import utils, ndk, graph_runtime as runtime
 
 def get_data(dataset, data_dir, batch_size, test_batch_size):
     kwargs = {'num_workers': 1, 'pin_memory': True} if torch.cuda.is_available() else {
@@ -119,9 +128,27 @@ tflite_file = '/github/evta/model.tflite'
 train_loader, val_loader, criterion = get_data(dataset, data_dir, test_batch_size, test_batch_size)
 device = torch.device("cpu")
 
-interpreter = tf.lite.Interpreter(model_path=tflite_file)
-interpreter.allocate_tensors()
-test_tflite(interpreter, criterion, val_loader)
+from PIL import Image
+from tvm.contrib.download import download_testdata
+img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
+img_path = download_testdata(img_url, "cat.png", module="data")
+img = Image.open(img_path).resize((32, 32))
+from torchvision import transforms
+
+my_preprocess = transforms.Compose(
+    [
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomCrop(32, 4),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]),
+    ]
+)
+img = my_preprocess(img)
+img = np.expand_dims(img, 0)
+
+#interpreter = tf.lite.Interpreter(model_path=tflite_file)
+#interpreter.allocate_tensors()
+#test_tflite(interpreter, criterion, val_loader)
 
 #####################################################
 # Compile the model with relay
@@ -132,7 +159,6 @@ test_target = "cpu"
 arch = "arm64"
 target = "llvm -mtriple=%s-linux-android" % arch
 target_host = None
-num_outputs = 1
 
 if local_demo:
     target_host = None
@@ -149,7 +175,7 @@ elif test_target == "vulkan":
 
 my_shape = cPickle.load(open('/github/evta/my_shape.p','rb'))
 torch_model = VGG(my_shape=my_shape, depth=16).to(device)
-torch_model.load_state_dict(torch.load('/github/evta/model_trained.pth'))
+torch_model.load_state_dict(torch.load('/github/evta/model_trained.pth', map_location=torch.device('cpu')))
 torch_model.eval()
 
 import tvm.contrib.graph_runtime as runtime
@@ -164,9 +190,15 @@ mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
 
 with tvm.transform.PassContext(opt_level=3):
 	lib = relay.build_module.build(mod, target=target, params=params)
-path_lib = "tvm_lib_android.tar"
+
+#path_lib = "tvm_lib_android.tar"
+#lib.export_library(path_lib)
+#loaded_lib = tvm.runtime.load_module(path_lib)
+
+tmp = utils.tempdir()
+lib_fname = tmp.relpath("net.so")
 fcompile = ndk.create_shared if not local_demo else None
-lib.export_library(path_lib, fcompile)
+lib.export_library(lib_fname, fcompile)
 #loaded_lib = tvm.runtime.load_module(path_lib)
 #ctx = tvm.context(str(target), 0)
 #module = runtime.GraphModule(loaded_lib["default"](ctx))
@@ -192,8 +224,9 @@ elif test_target == "vulkan":
 else:
 	ctx = remote.cpu(0)
 
-remote.upload("tvm_lib_android.so")
-rlib = remote.load_module("tvm_lib_android.so")
+remote.upload(lib_fname)
+#rlib = tvm.runtime.load_module("net.so")
+rlib = remote.load_module("net.so")
 module = runtime.GraphModule(rlib["default"](ctx))
 
 test3(module, input_name, ctx, criterion, val_loader, "TVM") #####
