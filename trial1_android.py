@@ -88,8 +88,14 @@ def test3(model, input_name, ctx, criterion, val_loader, text):
     test_loss = 0 
     correct = 0 
     total_time = 0 
+    print("2")
+    loc = 0
     with torch.no_grad():
         for data, target in val_loader:
+            print('{}'.format(loc))
+            loc = loc + 1
+            if loc==11:
+                break
             output_arr = np.array([1,2])
             for i in range(len(target)):
                 model.set_input(input_name, np.expand_dims(data[i], 0)) 
@@ -104,6 +110,7 @@ def test3(model, input_name, ctx, criterion, val_loader, text):
                     output_arr = output
                 else:
                     output_arr = np.append(output_arr, output, axis=0)
+            print('{}'.format(total_time))
             output_arr = output_arr.reshape(len(target), 10) 
             output_arr = torch.from_numpy(output_arr)
             # sum up batch loss
@@ -112,11 +119,14 @@ def test3(model, input_name, ctx, criterion, val_loader, text):
             pred = output_arr.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
 
-    test_loss /= len(val_loader.dataset)
-    accuracy = correct / len(val_loader.dataset)
-    fps2 = len(val_loader.dataset) / total_time
+#    test_loss /= len(val_loader.dataset)
+#    accuracy = correct / len(val_loader.dataset)
+#    fps2 = len(val_loader.dataset) / total_time
+    test_loss /= 640
+    accuracy = correct / 640
+    fps2 = 640 / total_time
     print('{} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%), FPS_1: {:.2f}, FPS_2: {:.2f}'.format(
-    	text, test_loss, correct, len(val_loader.dataset), 100. * accuracy, fps, fps2))
+    	text, test_loss, correct, 640, 100. * accuracy, fps, fps2))
 
     return accuracy
 
@@ -127,6 +137,7 @@ tflite_file = '/github/evta/model.tflite'
 
 train_loader, val_loader, criterion = get_data(dataset, data_dir, test_batch_size, test_batch_size)
 device = torch.device("cpu")
+#device = torch.device("cuda")
 
 from PIL import Image
 from tvm.contrib.download import download_testdata
@@ -156,9 +167,11 @@ img = np.expand_dims(img, 0)
 
 local_demo = False #True
 test_target = "cpu"
+#test_target = "vulkan"
 arch = "arm64"
 target = "llvm -mtriple=%s-linux-android" % arch
 target_host = None
+#target_host = "opencl"
 
 if local_demo:
     target_host = None
@@ -176,6 +189,7 @@ elif test_target == "vulkan":
 my_shape = cPickle.load(open('/github/evta/my_shape.p','rb'))
 torch_model = VGG(my_shape=my_shape, depth=16).to(device)
 torch_model.load_state_dict(torch.load('/github/evta/model_trained.pth', map_location=torch.device('cpu')))
+#torch_model.load_state_dict(torch.load('/github/evta/model_trained.pth'))
 torch_model.eval()
 
 import tvm.contrib.graph_runtime as runtime
@@ -213,7 +227,7 @@ if local_demo:
 	remote = rpc.LocalSession()
 else:
 	tracker = rpc.connect_tracker(tracker_host, tracker_port)
-	remote = tracker.request(key, priority=0, session_timeout=60)
+	remote = tracker.request(key, priority=0, session_timeout=200)
 
 if local_demo:
 	ctx = remote.cpu(0)
@@ -228,6 +242,8 @@ remote.upload(lib_fname)
 #rlib = tvm.runtime.load_module("net.so")
 rlib = remote.load_module("net.so")
 module = runtime.GraphModule(rlib["default"](ctx))
+print("1")
+
 
 test3(module, input_name, ctx, criterion, val_loader, "TVM") #####
 
