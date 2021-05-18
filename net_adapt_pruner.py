@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.WARNING)
 #sys.stderr = open(os.devnull, 'w')
 ######################
 '''
-#from multiprocessing import Process
+from multiprocessing import Process
 import logging
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -53,6 +53,7 @@ from tvm.contrib import utils, ndk, graph_runtime as runtime
 from nni.compression.pytorch.utils.counter import count_flops_params
 
 from nni.compression.pytorch import ModelSpeedup
+import gc
 ###########################################################
 
 
@@ -317,11 +318,60 @@ class NetAdaptPruner(Pruner):
 #        accuracy = correct / real_cases
         latency = (total_time*1000) / real_cases
 #        fps2 = real_cases / total_time
-#        print('{} Latency: {:.6f}'.format(text, latency))
+        print('{} Latency: {:.6f}'.format(text, latency))
 #        print('{} Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%), Latency: {:.6f}'.format(
 #                    text, test_loss, correct, real_cases, 100. * accuracy, latency))
 
         return latency
+
+    def _tune_tasks(
+        self,
+        tasks,
+        measure_option,
+        tuner="xgb",
+        n_trial=1000,
+        early_stopping=None,
+        log_filename="tuning.log",
+        use_transfer_learning=True,
+    ):
+        # create tmp log file
+        tmp_log_file = log_filename + ".tmp"
+        if os.path.exists(tmp_log_file):
+            os.remove(tmp_log_file)
+
+        for i, tsk in enumerate(reversed(tasks)):
+            prefix = "[Task %2d/%2d] " % (i+1, len(tasks))
+            # create tuner
+            if tuner == "xgb" or tuner == "xgb-rank":
+                tuner_obj = XGBTuner(tsk, loss_type="rank")
+            elif tuner == "ga":
+                tuner_obj = GATuner(tsk, pop_size=100)
+            elif tuner == "random":
+                tuner_obj = RandomTuner(tsk)
+            elif tuner == "gridsearch":
+                tuner_obj = GridSearchTuner(tsk)
+            else:
+                raise ValueError("Invalid tuner: " + tuner)
+
+            if use_transfer_learning:
+                if os.path.isfile(tmp_log_file):
+                    tuner_obj.load_history(autotvm.record.load_from_file(tmp_log_file))
+
+            # do tuning
+            tsk_trial = min(n_trial, len(tsk.config_space))
+            tuner_obj.tune(
+                n_trial=tsk_trial,
+                early_stopping=early_stopping,
+                measure_option=measure_option,
+                callbacks=[
+                    autotvm.callback.progress_bar(tsk_trial, prefix=prefix),
+                    autotvm.callback.log_to_file(tmp_log_file),
+                ],
+            )
+
+        # pick best records to a cache file
+        autotvm.record.pick_best(tmp_log_file, log_filename)
+        os.remove(tmp_log_file)
 
     def compress(self):
         """
@@ -354,13 +404,31 @@ class NetAdaptPruner(Pruner):
         device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 #        device = torch.device("cpu")
         arch = "arm64"
-        target = "llvm -mtriple=%s-linux-android" % arch
+        target = "llvm -mtriple=%s-linux-android" % arch        
 #        target = "opencl --device=mali"
 #        target_host = "llvm -mtriple=arm64-linux-android"
 #        my_shape = cPickle.load(open(os.path.join('/github/evta2/output', str(num), 'my_shape.p'),'rb'))
 #        torch_model = VGG(my_shape=my_shape, depth=16).to(device)
 #        torch_model.load_state_dict(torch.load(os.path.join('/github/evta2/output', str(num), 'model_trained.pth')))
 #        torch_model.eval()
+################# Autotune added
+        network = "vgg-16"
+        device_key = "android"
+        log_file = "%s.%s.log" % (device_key, network)
+        dtype = "float32"
+        use_android = True
+
+        tuning_option = {
+            "log_filename": log_file,
+            "tuner": "xgb",
+            "n_trial": 100,
+            "early_stopping": 50,
+            "measure_option": autotvm.measure_option(
+                builder=autotvm.LocalBuilder(build_func="ndk" if use_android else "default"),
+                runner=autotvm.RPCRunner(device_key, host="0.0.0.0", port=9190, number=5, timeout=10000)
+            )
+        }
+################################
         self._model_to_prune.eval()
         input_shape = [1, 3, 32, 32]
         output_shape = [1, 10]
@@ -369,31 +437,66 @@ class NetAdaptPruner(Pruner):
         input_name = "input0"
         shape_list = [(input_name, img.shape)]
         mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
-        with tvm.transform.PassContext(opt_level=3):
-            lib = relay.build_module.build(mod, target=target, params=params)
-        tmp = utils.tempdir()
-        from tvm.contrib import ndk
-        lib_fname = tmp.relpath("net.so")
-        lib.export_library(lib_fname, ndk.create_shared)
+        
+        tasks = autotvm.task.extract_from_program(
+            mod["main"], target=target, params=params, ops=(relay.op.get("nn.conv2d"), relay.op.get("nn.dense"),)
+        )
+        self._tune_tasks(tasks, **tuning_option)
+
         tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
         tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9190))
         key = "android"
         tracker = rpc.connect_tracker(tracker_host, tracker_port)
         remote = tracker.request(key, priority=0, session_timeout=0)
-#        ctx = remote.cl(0)
-        ctx = remote.cpu(0)
-        remote.upload(lib_fname)
-        rlib = remote.load_module("net.so")
-        module = runtime.GraphModule(rlib["default"](ctx))
-
-        pruning_iteration = 1
-#        current_sparsity = 0
-        current_latency = self._test3(module, input_name, ctx, "TVM_initial")
+        ctx = remote.cpu(0)  # remote.cl(0)
         
+        with autotvm.apply_history_best(log_file):
+            with tvm.transform.PassContext(opt_level=3):
+                lib = relay.build_module.build(mod, target=target, params=params)
+            tmp = utils.tempdir()
+            lib_fname = tmp.relpath("net.so")
+            lib.export_library(lib_fname, ndk.create_shared)
+            remote.upload(lib_fname)
+            rlib = remote.load_module("net.so")
+            module = runtime.GraphModule(rlib["default"](ctx))
+
+        current_latency = self._test3(module, input_name, ctx, "TVM_initial")
+        input_data = None
+        scripted_model = None
+        mod = None
+        params = None
+        lib = None
+        lib_fname = None
+        tracker_host = None
+        tracker_port = None
+        tracker = None
+        remote = None
+        ctx = None
+        rlib = None
+        module = None
+        del input_data
+        del scripted_model
+        del mod
+        del params
+        del lib
+        del lib_fname
+        del tracker_host
+        del tracker_port
+        del tracker
+        del remote
+        del ctx
+        del rlib
+        del module
+        gc.collect()
+        print('Relaunch app!')
+        time.sleep(60)
+
+        
+        pruning_iteration = 1
         delta_num_weights_per_iteration = \
             int(get_total_num_weights(self._model_to_prune, ['Conv2d', 'Linear']) * self._sparsity_per_iteration)
-        init_resource_reduction_ratio = 0.05 # 0.025 
-        resource_reduction_decay = 0.98 #0.96
+        init_resource_reduction_ratio = 0.025 # 0.05 
+        resource_reduction_decay = 0.96 #0.98
         max_iter = 100
 
         budget = 13.421 #budget_times * current_fps
@@ -470,7 +573,7 @@ class NetAdaptPruner(Pruner):
                     masks_file = './mask.pth'
                     m_speedup = ModelSpeedup(model, self._dummy_input, masks_file, device)
                     m_speedup.speedup_model()
-                    # added 1: TVM build
+                    # added 1: Autotune + TVM build
                     model.eval()
                     _, _, _ = count_flops_params(model, (1, 3, 32, 32))
                     input_shape = [1, 3, 32, 32]
@@ -480,31 +583,65 @@ class NetAdaptPruner(Pruner):
                     input_name = "input0"
                     shape_list = [(input_name, img.shape)]
                     mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
-#                    Q = Queue()
-                    with tvm.transform.PassContext(opt_level=3):
-                        lib = relay.build_module.build(mod, target=target, params=params)
-#                    def thread_func(module, ctx):
-                    tmp = utils.tempdir()
-                    lib_fname = tmp.relpath("net.so")
-                    lib.export_library(lib_fname, ndk.create_shared)
+
+                    tasks = autotvm.task.extract_from_program(
+                        mod["main"], target=target, params=params, ops=(relay.op.get("nn.conv2d"), relay.op.get("nn.dense"),)
+                    )
+                    self._tune_tasks(tasks, **tuning_option)
+
                     tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
                     tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9190))
                     key = "android"
                     tracker = rpc.connect_tracker(tracker_host, tracker_port)
                     remote = tracker.request(key, priority=0, session_timeout=0)
-#                    ctx = remote.cl(0)
-                    ctx = remote.cpu(0)
-                    temp_str = remote.upload(lib_fname)
-                    rlib = remote.load_module("net.so")
-                    module = runtime.GraphModule(rlib["default"](ctx))
+                    ctx = remote.cpu(0)   # remote.cl(0)
+
+                    with autotvm.apply_history_best(log_file):
+                        with tvm.transform.PassContext(opt_level=3):
+                            lib = relay.build_module.build(mod, target=target, params=params)
+#                    def thread_func(module, ctx):
+                        tmp = utils.tempdir()
+                        lib_fname = tmp.relpath("net.so")
+                        lib.export_library(lib_fname, ndk.create_shared)
+                        temp_str = remote.upload(lib_fname)
+                        rlib = remote.load_module("net.so")
+                        module = runtime.GraphModule(rlib["default"](ctx))
 
 #                    p = Process(target=thread_func, args=(module, ctx))
 #                    p.start()
 #                    p.join()
-#                    print("threading finished")
+#                    print("threading finished")                    
                     temp_latency = self._test3(module, input_name, ctx, "TVM")
+                    input_data = None
+                    scripted_model = None
+                    mod = None
+                    params = None
+                    lib = None
+                    lib_fname = None
+                    tracker_host = None
+                    tracker_port = None
+                    tracker = None
+                    remote = None
+                    ctx = None
+                    rlib = None
+                    module = None
+                    del input_data
+                    del scripted_model
+                    del mod
+                    del params
+                    del lib
+                    del lib_fname
+                    del tracker_host
+                    del tracker_port
+                    del tracker
+                    del remote
+                    del ctx
+                    del rlib
+                    del module
+                    gc.collect()
+
                     print('temp_latench: ' + str(temp_latency))
-                    print('Layer: ' + wrapper.name + ', target_latency: ' + str(target_latency) + ', temp_latency: ' + str(temp_latency))
+                    print('Layer: ' + wrapper.name + ', target_latency: ' + str(target_latency) + ', temp_latency: ' + str(temp_latency) + ', target_op_sparsity: ' + str(target_op_sparsity))
                     file_object = open('./record_tvm.txt', 'a')
                     file_object.write('Layer: ' + wrapper.name + ', target_latency: ' + str(target_latency) + ', temp_latency: ' + str(temp_latency) + '\n')
                     file_object.close()
@@ -514,7 +651,7 @@ class NetAdaptPruner(Pruner):
                     else:
                         if target_op_sparsity < 0.5:
                             target_op_sparsity += 0.1
-                        elif target_op_sparsity <= 0.85:
+                        elif target_op_sparsity <= 0.90:
                             target_op_sparsity += 0.05
                         else:
                             print('Improper layer: ' + wrapper.name)
@@ -557,8 +694,8 @@ class NetAdaptPruner(Pruner):
                     # save model weights
                     pruner.export_model(self._tmp_model_path)
 
-#                print('Relaunch app!')
-#                time.sleep(30)
+                print('Relaunch app!')
+                time.sleep(60)
                 improper_idx += 1
 
             if not best_op:
