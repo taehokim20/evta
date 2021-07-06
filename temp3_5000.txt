@@ -1,0 +1,351 @@
++-------+--------------+--------+------------------+----------+---------+
+| Index |     Name     |  Type  |   Weight Shape   |  FLOPs   | #Params |
++-------+--------------+--------+------------------+----------+---------+
+|   0   |  feature.0   | Conv2d |  (64, 3, 3, 3)   | 1769472  |   1728  |
+|   1   |  feature.3   | Conv2d |  (64, 64, 3, 3)  | 37748736 |  36864  |
+|   2   |  feature.7   | Conv2d | (128, 64, 3, 3)  | 18874368 |  73728  |
+|   3   |  feature.10  | Conv2d | (128, 128, 3, 3) | 37748736 |  147456 |
+|   4   |  feature.14  | Conv2d | (256, 128, 3, 3) | 18874368 |  294912 |
+|   5   |  feature.17  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   6   |  feature.20  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   7   |  feature.24  | Conv2d | (512, 256, 3, 3) | 18874368 | 1179648 |
+|   8   |  feature.27  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   9   |  feature.30  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   10  |  feature.34  | Conv2d | (512, 512, 3, 3) | 9437184  | 2359296 |
+|   11  |  feature.37  | Conv2d | (512, 512, 3, 3) | 9437184  | 2359296 |
+|   12  |  feature.40  | Conv2d | (512, 512, 3, 3) | 9437184  | 2359296 |
+|   13  | classifier.0 | Linear |    (512, 512)    |  262144  |  262656 |
+|   14  | classifier.3 | Linear |    (10, 512)     |   5120   |   5130  |
++-------+--------------+--------+------------------+----------+---------+
+FLOPs total: 313463808
+#Params total: 14978250
+Weights: [1, 1, 1, 3, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1]
+Task 0:  ["9847f8cc0b305137f49f2c5c0c8ab25d", 1, 512, 10, 512, 10, 1, 10]
+Task 1:  ["472f8f113f15cb4a194c920b6b8bb79b", 1, 512, 512, 512, 512, 512, 512, 1, 512]
+Task 2:  ["96545879d5dfb7d01f882295e62002e2", 1, 2, 2, 512, 1, 1, 1, 512]
+Task 3:  ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 2, 2, 512]
+Task 4:  ["96545879d5dfb7d01f882295e62002e2", 1, 4, 4, 512, 1, 2, 2, 512]
+Task 5:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+Task 6:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 256, 3, 3, 256, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+Task 7:  ["96545879d5dfb7d01f882295e62002e2", 1, 8, 8, 256, 1, 4, 4, 256]
+Task 8:  ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 256, 6, 6, 256, 256, 1, 1, 1, 256, 1, 8, 8, 256]
+Task 9:  ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 128, 6, 6, 256, 128, 1, 1, 1, 256, 1, 8, 8, 256]
+Task 10: ["96545879d5dfb7d01f882295e62002e2", 1, 16, 16, 128, 1, 8, 8, 128]
+Task 11: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 128, 6, 6, 128, 128, 1, 1, 1, 128, 1, 16, 16, 128]
+Task 12: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 64, 6, 6, 128, 64, 1, 1, 1, 128, 1, 16, 16, 128]
+Task 13: ["96545879d5dfb7d01f882295e62002e2", 1, 32, 32, 64, 1, 16, 16, 64]
+Task 14: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 64, 3, 3, 64, 64, 1, 1, 1, 64, 1, 32, 32, 64]
+Task 15: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 3, 3, 3, 3, 64, 1, 1, 1, 64, 1, 32, 32, 64]
+=============================== Workload_key Grouping =======================================
+Task 2:  ["96545879d5dfb7d01f882295e62002e2", 1, 2, 2, 512, 1, 1, 1, 512]
+Task 4:  ["96545879d5dfb7d01f882295e62002e2", 1, 4, 4, 512, 1, 2, 2, 512]
+Task 7:  ["96545879d5dfb7d01f882295e62002e2", 1, 8, 8, 256, 1, 4, 4, 256]
+Task 10: ["96545879d5dfb7d01f882295e62002e2", 1, 16, 16, 128, 1, 8, 8, 128]
+Task 13: ["96545879d5dfb7d01f882295e62002e2", 1, 32, 32, 64, 1, 16, 16, 64]
+---------------------------------------------------------------------------
+Task 3[3]:  ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 2, 2, 512]
+Task 5[2]:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+Task 6:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 256, 3, 3, 256, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+---------------------------------------------------------------------------
+Task 8[2]:  ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 256, 6, 6, 256, 256, 1, 1, 1, 256, 1, 8, 8, 256]
+Task 9:  ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 128, 6, 6, 256, 128, 1, 1, 1, 256, 1, 8, 8, 256]
+---------------------------------------------------------------------------
+Task 11: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 128, 6, 6, 128, 128, 1, 1, 1, 128, 1, 16, 16, 128]
+Task 12: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 64, 6, 6, 128, 64, 1, 1, 1, 128, 1, 16, 16, 128]
+---------------------------------------------------------------------------
+Task 14: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 64, 3, 3, 64, 64, 1, 1, 1, 64, 1, 32, 32, 64] 
+Task 15: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 3, 3, 3, 3, 64, 1, 1, 1, 64, 1, 32, 32, 64]
+============================== All tasks ===================================
+============ Task 0 (workload key: ["9847f8cc0b305137f49f2c5c0c8ab25d", 1, 512, 10, 512, 10, 1, 10]) ===========
+placeholder = PLACEHOLDER [1, 512]
+placeholder = PLACEHOLDER [10, 512]
+T_dense(i, j) += (placeholder[i, k]*placeholder[j, k])
+placeholder = PLACEHOLDER [10]
+T_add(ax0, ax1) = (T_dense[ax0, ax1] + placeholder[ax1])
+
+============ Task 1 (workload key: ["472f8f113f15cb4a194c920b6b8bb79b", 1, 512, 512, 512, 512, 512, 512, 1, 512]) ===========
+placeholder = PLACEHOLDER [1, 512]
+placeholder = PLACEHOLDER [512, 512]
+T_dense(i, j) += (placeholder[i, k]*placeholder[j, k])
+placeholder = PLACEHOLDER [512]
+T_add(ax0, ax1) = (T_dense[ax0, ax1] + placeholder[ax1])
+placeholder = PLACEHOLDER [512]
+T_multiply(ax0, ax1) = (T_add[ax0, ax1]*placeholder[ax1])
+placeholder = PLACEHOLDER [512]
+T_add(ax0, ax1) = (T_multiply[ax0, ax1] + placeholder[ax1])
+T_relu(ax0, ax1) = max(T_add[ax0, ax1], 0f)
+
+============ Task 2 (workload key: ["96545879d5dfb7d01f882295e62002e2", 1, 2, 2, 512, 1, 1, 1, 512]) ===========
+placeholder = PLACEHOLDER [1, 2, 2, 512]
+tensor(ax0, ax1, ax2, ax3) max= placeholder[ax0, ((ax1*2) + rv0), ((ax2*2) + rv1), ax3]
+
+============ Task 3 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 2, 2, 512]) ===========
+placeholder = PLACEHOLDER [1, 2, 2, 512]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 3)) && (i2 >= 1)) && (i2 < 3)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 512, 512]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 512]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 4 (workload key: ["96545879d5dfb7d01f882295e62002e2", 1, 4, 4, 512, 1, 2, 2, 512]) ===========
+placeholder = PLACEHOLDER [1, 4, 4, 512]
+tensor(ax0, ax1, ax2, ax3) max= placeholder[ax0, ((ax1*2) + rv0), ((ax2*2) + rv1), ax3]
+
+============ Task 5 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 4, 4, 512]) ===========
+placeholder = PLACEHOLDER [1, 4, 4, 512]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 5)) && (i2 >= 1)) && (i2 < 5)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 512, 512]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 512]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 6 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 256, 3, 3, 256, 512, 1, 1, 1, 512, 1, 4, 4, 512]) ===========
+placeholder = PLACEHOLDER [1, 4, 4, 256]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 5)) && (i2 >= 1)) && (i2 < 5)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 256, 512]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 512]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 7 (workload key: ["96545879d5dfb7d01f882295e62002e2", 1, 8, 8, 256, 1, 4, 4, 256]) ===========
+placeholder = PLACEHOLDER [1, 8, 8, 256]
+tensor(ax0, ax1, ax2, ax3) max= placeholder[ax0, ((ax1*2) + rv0), ((ax2*2) + rv1), ax3]
+
+============ Task 8 (workload key: ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 256, 6, 6, 256, 256, 1, 1, 1, 256, 1, 8, 8, 256]) ===========
+placeholder = PLACEHOLDER [1, 8, 8, 256]
+data_pad(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 9)) && (i2 >= 1)) && (i2 < 9)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+input_tile(eps, nu, p, ci) = data_pad[floordiv(p, 4), ((floormod(floordiv(p, 2), 2)*4) + eps), ((floormod(p, 2)*4) + nu), ci]
+B(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 6) == 5)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 6) == 4)),  ..(OMITTED)..  (floormod(j, 6) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 6) == 0)), 1f, 0f))))))))))))))))))))))))))))))))))))
+data_pack(eps, nu, p, ci) += ((input_tile[r_a, r_b, p, ci]*B[r_a, eps])*B[r_b, nu])
+placeholder = PLACEHOLDER [6, 6, 256, 256]
+bgemm(eps, nu, p, co) += (data_pack[eps, nu, p, ci]*placeholder[eps, nu, co, ci])
+A(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 4) == 3)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 4) == 2)),  ..(OMITTED)..  6) == 0) && (floormod(j, 4) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 4) == 0)), 1f, 0f))))))))))))))))))))))))
+inverse(vh, vw, p, co) += ((bgemm[r_a, r_b, p, co]*A[r_a, vh])*A[r_b, vw])
+conv2d_winograd(n, h, w, co) = inverse[floormod(h, 4), floormod(w, 4), ((((n*2)*2) + (floordiv(h, 4)*2)) + floordiv(w, 4)), co]
+placeholder = PLACEHOLDER [1, 1, 1, 256]
+T_add(ax0, ax1, ax2, ax3) = (conv2d_winograd[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 9 (workload key: ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 128, 6, 6, 256, 128, 1, 1, 1, 256, 1, 8, 8, 256]) ===========
+placeholder = PLACEHOLDER [1, 8, 8, 128]
+data_pad(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 9)) && (i2 >= 1)) && (i2 < 9)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+input_tile(eps, nu, p, ci) = data_pad[floordiv(p, 4), ((floormod(floordiv(p, 2), 2)*4) + eps), ((floormod(p, 2)*4) + nu), ci]
+B(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 6) == 5)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 6) == 4)),  ..(OMITTED)..  (floormod(j, 6) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 6) == 0)), 1f, 0f))))))))))))))))))))))))))))))))))))
+data_pack(eps, nu, p, ci) += ((input_tile[r_a, r_b, p, ci]*B[r_a, eps])*B[r_b, nu])
+placeholder = PLACEHOLDER [6, 6, 256, 128]
+bgemm(eps, nu, p, co) += (data_pack[eps, nu, p, ci]*placeholder[eps, nu, co, ci])
+A(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 4) == 3)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 4) == 2)),  ..(OMITTED)..  6) == 0) && (floormod(j, 4) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 4) == 0)), 1f, 0f))))))))))))))))))))))))
+inverse(vh, vw, p, co) += ((bgemm[r_a, r_b, p, co]*A[r_a, vh])*A[r_b, vw])
+conv2d_winograd(n, h, w, co) = inverse[floormod(h, 4), floormod(w, 4), ((((n*2)*2) + (floordiv(h, 4)*2)) + floordiv(w, 4)), co]
+placeholder = PLACEHOLDER [1, 1, 1, 256]
+T_add(ax0, ax1, ax2, ax3) = (conv2d_winograd[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 10 (workload key: ["96545879d5dfb7d01f882295e62002e2", 1, 16, 16, 128, 1, 8, 8, 128]) ===========
+placeholder = PLACEHOLDER [1, 16, 16, 128]
+tensor(ax0, ax1, ax2, ax3) max= placeholder[ax0, ((ax1*2) + rv0), ((ax2*2) + rv1), ax3]
+
+============ Task 11 (workload key: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 128, 6, 6, 128, 128, 1, 1, 1, 128, 1, 16, 16, 128]) ===========
+placeholder = PLACEHOLDER [1, 16, 16, 128]
+data_pad(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 17)) && (i2 >= 1)) && (i2 < 17)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+input_tile(eps, nu, p, ci) = data_pad[floordiv(p, 16), ((floormod(floordiv(p, 4), 4)*4) + eps), ((floormod(p, 4)*4) + nu), ci]
+B(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 6) == 5)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 6) == 4)),  ..(OMITTED)..  (floormod(j, 6) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 6) == 0)), 1f, 0f))))))))))))))))))))))))))))))))))))
+data_pack(eps, nu, p, ci) += ((input_tile[r_a, r_b, p, ci]*B[r_a, eps])*B[r_b, nu])
+placeholder = PLACEHOLDER [6, 6, 128, 128]
+bgemm(eps, nu, p, co) += (data_pack[eps, nu, p, ci]*placeholder[eps, nu, co, ci])
+A(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 4) == 3)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 4) == 2)),  ..(OMITTED)..  6) == 0) && (floormod(j, 4) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 4) == 0)), 1f, 0f))))))))))))))))))))))))
+inverse(vh, vw, p, co) += ((bgemm[r_a, r_b, p, co]*A[r_a, vh])*A[r_b, vw])
+conv2d_winograd(n, h, w, co) = inverse[floormod(h, 4), floormod(w, 4), ((((n*4)*4) + (floordiv(h, 4)*4)) + floordiv(w, 4)), co]
+placeholder = PLACEHOLDER [1, 1, 1, 128]
+T_add(ax0, ax1, ax2, ax3) = (conv2d_winograd[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 12 (workload key: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 64, 6, 6, 128, 64, 1, 1, 1, 128, 1, 16, 16, 128]) ===========
+placeholder = PLACEHOLDER [1, 16, 16, 64]
+data_pad(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 17)) && (i2 >= 1)) && (i2 < 17)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+input_tile(eps, nu, p, ci) = data_pad[floordiv(p, 16), ((floormod(floordiv(p, 4), 4)*4) + eps), ((floormod(p, 4)*4) + nu), ci]
+B(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 6) == 5)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 6) == 4)),  ..(OMITTED)..  (floormod(j, 6) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 6) == 0)), 1f, 0f))))))))))))))))))))))))))))))))))))
+data_pack(eps, nu, p, ci) += ((input_tile[r_a, r_b, p, ci]*B[r_a, eps])*B[r_b, nu])
+placeholder = PLACEHOLDER [6, 6, 128, 64]
+bgemm(eps, nu, p, co) += (data_pack[eps, nu, p, ci]*placeholder[eps, nu, co, ci])
+A(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 4) == 3)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 4) == 2)),  ..(OMITTED)..  6) == 0) && (floormod(j, 4) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 4) == 0)), 1f, 0f))))))))))))))))))))))))
+inverse(vh, vw, p, co) += ((bgemm[r_a, r_b, p, co]*A[r_a, vh])*A[r_b, vw])
+conv2d_winograd(n, h, w, co) = inverse[floormod(h, 4), floormod(w, 4), ((((n*4)*4) + (floordiv(h, 4)*4)) + floordiv(w, 4)), co]
+placeholder = PLACEHOLDER [1, 1, 1, 128]
+T_add(ax0, ax1, ax2, ax3) = (conv2d_winograd[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 13 (workload key: ["96545879d5dfb7d01f882295e62002e2", 1, 32, 32, 64, 1, 16, 16, 64]) ===========
+placeholder = PLACEHOLDER [1, 32, 32, 64]
+tensor(ax0, ax1, ax2, ax3) max= placeholder[ax0, ((ax1*2) + rv0), ((ax2*2) + rv1), ax3]
+
+============ Task 14 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 64, 3, 3, 64, 64, 1, 1, 1, 64, 1, 32, 32, 64]) ===========
+placeholder = PLACEHOLDER [1, 32, 32, 64]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 33)) && (i2 >= 1)) && (i2 < 33)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 64, 64]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 64]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 15 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 3, 3, 3, 3, 64, 1, 1, 1, 64, 1, 32, 32, 64]) ===========
+placeholder = PLACEHOLDER [1, 32, 32, 3]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 33)) && (i2 >= 1)) && (i2 < 33)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 3, 64]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 64]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+----------------------------------------------------------------------
+------------------------------  [ Task Scheduler ]
+----------------------------------------------------------------------
+|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |
+-------------------------------------------------
+|    0 |        0.030 |           0.34 |      1 |
+|    1 |        0.061 |           8.63 |      1 |
+|    2 |        0.014 |           0.15 |      1 |
+|    3 |        2.355 |           8.01 |      1 |
+|    4 |        0.014 |           0.60 |      1 |
+|    5 |       11.773 |           6.41 |      1 |
+|    6 |        2.201 |          17.16 |      1 |
+|    7 |        0.019 |           0.88 |      1 |
+|    8 |        2.053 |          12.01 |      1 |
+|    9 |        0.671 |          19.72 |      1 |
+|   10 |        0.022 |           1.51 |      1 |
+|   11 |        1.324 |          23.00 |      1 |
+|   12 |        1.971 |           8.64 |      1 |
+|   13 |        0.029 |           2.22 |      1 |
+|   14 |       10.360 |           7.30 |      1 |
+|   15 |        0.123 |          29.81 |      1 |
+-------------------------------------------------
+Estimated total latency: 51.557 ms	Trials: 16	Used time : 141 s
+Latency: 17.333887 (93.44%)
+
+
+=================================== Layer 10 - 448 =====================================
++-------+--------------+--------+------------------+----------+---------+
+| Index |     Name     |  Type  |   Weight Shape   |  FLOPs   | #Params |
++-------+--------------+--------+------------------+----------+---------+
+|   0   |  feature.0   | Conv2d |  (64, 3, 3, 3)   | 1769472  |   1728  |
+|   1   |  feature.3   | Conv2d |  (64, 64, 3, 3)  | 37748736 |  36864  |
+|   2   |  feature.7   | Conv2d | (128, 64, 3, 3)  | 18874368 |  73728  |
+|   3   |  feature.10  | Conv2d | (128, 128, 3, 3) | 37748736 |  147456 |
+|   4   |  feature.14  | Conv2d | (256, 128, 3, 3) | 18874368 |  294912 |
+|   5   |  feature.17  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   6   |  feature.20  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   7   |  feature.24  | Conv2d | (512, 256, 3, 3) | 18874368 | 1179648 |
+|   8   |  feature.27  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   9   |  feature.30  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   10  |  feature.34  | Conv2d | (448, 512, 3, 3) | 8257536  | 2064384 |
+|   11  |  feature.37  | Conv2d | (512, 448, 3, 3) | 8257536  | 2064384 |
+|   12  |  feature.40  | Conv2d | (512, 512, 3, 3) | 9437184  | 2359296 |
+|   13  | classifier.0 | Linear |    (512, 512)    |  262144  |  262656 |
+|   14  | classifier.3 | Linear |    (10, 512)     |   5120   |   5130  |
++-------+--------------+--------+------------------+----------+---------+
+FLOPs total: 311104512
+#Params total: 14388426
+Weights: [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1]
+Task 0:  ["9847f8cc0b305137f49f2c5c0c8ab25d", 1, 512, 10, 512, 10, 1, 10] 
+Task 1:  ["472f8f113f15cb4a194c920b6b8bb79b", 1, 512, 512, 512, 512, 512, 512, 1, 512]
+Task 2:  ["96545879d5dfb7d01f882295e62002e2", 1, 2, 2, 512, 1, 1, 1, 512]
+Task 3:  ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 2, 2, 512]
+Task 4:  ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 448, 3, 3, 448, 512, 1, 1, 1, 512, 1, 2, 2, 512]
+Task 5:  ["a543b40af283ee8e8ccfabc62b2e44e4", 1, 2, 2, 512, 6, 6, 448, 512, 1, 1, 1, 448, 1, 2, 2, 448]
+Task 6:  ["96545879d5dfb7d01f882295e62002e2", 1, 4, 4, 512, 1, 2, 2, 512]
+Task 7:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 512, 3, 3, 512, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+Task 8:  ["2350d19dc42a0665244368384c66b3a5", 1, 4, 4, 256, 3, 3, 256, 512, 1, 1, 1, 512, 1, 4, 4, 512]
+Task 9:  ["96545879d5dfb7d01f882295e62002e2", 1, 8, 8, 256, 1, 4, 4, 256]
+Task 10: ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 256, 6, 6, 256, 256, 1, 1, 1, 256, 1, 8, 8, 256]
+Task 11: ["d3718cb00a3efe8f31c2b86752fb8186", 1, 8, 8, 128, 6, 6, 256, 128, 1, 1, 1, 256, 1, 8, 8, 256]
+Task 12: ["96545879d5dfb7d01f882295e62002e2", 1, 16, 16, 128, 1, 8, 8, 128]
+Task 13: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 128, 6, 6, 128, 128, 1, 1, 1, 128, 1, 16, 16, 128]
+Task 14: ["c68f92478eb18145106184c587d212b6", 1, 16, 16, 64, 6, 6, 128, 64, 1, 1, 1, 128, 1, 16, 16, 128]
+Task 15: ["96545879d5dfb7d01f882295e62002e2", 1, 32, 32, 64, 1, 16, 16, 64] 
+Task 16: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 64, 3, 3, 64, 64, 1, 1, 1, 64, 1, 32, 32, 64] 
+Task 17: ["2350d19dc42a0665244368384c66b3a5", 1, 32, 32, 3, 3, 3, 3, 64, 1, 1, 1, 64, 1, 32, 32, 64] 
+=============================== Workload_key Grouping =======================================
+2, 6, 9, 12, 15
+3, 4, 7, 8, 16, 17
+10, 11
+13, 14
+=============================== Added tasks ==================================
+============ Task 4 (workload key: ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 448, 3, 3, 448, 512, 1, 1, 1, 512, 1, 2, 2, 512]) ===========
+placeholder = PLACEHOLDER [1, 2, 2, 448]
+PaddedInput(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 3)) && (i2 >= 1)) && (i2 < 3)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+placeholder = PLACEHOLDER [3, 3, 448, 512]
+Conv2dOutput(nn, yy, xx, ff) += (PaddedInput[nn, (yy + ry), (xx + rx), rc]*placeholder[ry, rx, rc, ff])
+placeholder = PLACEHOLDER [1, 1, 1, 512]
+T_add(ax0, ax1, ax2, ax3) = (Conv2dOutput[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+
+============ Task 5 (workload key: ["a543b40af283ee8e8ccfabc62b2e44e4", 1, 2, 2, 512, 6, 6, 448, 512, 1, 1, 1, 448, 1, 2, 2, 448]) ===========
+placeholder = PLACEHOLDER [1, 2, 2, 512]
+data_pad(i0, i1, i2, i3) = tir.if_then_else(((((i1 >= 1) && (i1 < 3)) && (i2 >= 1)) && (i2 < 3)), placeholder[i0, (i1 - 1), (i2 - 1), i3], 0f)
+input_tile(eps, nu, p, ci) = data_pad[p, eps, nu, ci]
+B(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 6) == 5)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 6) == 4)),  ..(OMITTED)..  (floormod(j, 6) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 6) == 0)), 1f, 0f))))))))))))))))))))))))))))))))))))
+data_pack(eps, nu, p, ci) += ((input_tile[r_a, r_b, p, ci]*B[r_a, eps])*B[r_b, nu])
+placeholder = PLACEHOLDER [6, 6, 448, 512]
+bgemm(eps, nu, p, co) += (data_pack[eps, nu, p, ci]*placeholder[eps, nu, co, ci])
+A(i, j) = select(((floormod(i, 6) == 5) && (floormod(j, 4) == 3)), 1f, select(((floormod(i, 6) == 5) && (floormod(j, 4) == 2)),  ..(OMITTED)..  6) == 0) && (floormod(j, 4) == 1)), 0f, select(((floormod(i, 6) == 0) && (floormod(j, 4) == 0)), 1f, 0f))))))))))))))))))))))))
+inverse(vh, vw, p, co) += ((bgemm[r_a, r_b, p, co]*A[r_a, vh])*A[r_b, vw])
+conv2d_winograd(n, h, w, co) = inverse[floormod(h, 4), floormod(w, 4), ((n + floordiv(h, 4)) + floordiv(w, 4)), co]
+placeholder = PLACEHOLDER [1, 1, 1, 448]
+T_add(ax0, ax1, ax2, ax3) = (conv2d_winograd[ax0, ax1, ax2, ax3] + placeholder[ax0, 0, 0, ax3])
+T_relu(ax0, ax1, ax2, ax3) = max(T_add[ax0, ax1, ax2, ax3], 0f)
+----------------------------------------------------------------------
+------------------------------  [ Task Scheduler ]
+----------------------------------------------------------------------
+|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |
+-------------------------------------------------
+|    0 |        0.001 |          10.83 |    192 |
+|    1 |        0.035 |          15.09 |    384 |
+|    2 |        0.001 |           2.99 |    128 |
+|    3 |        0.679 |          27.80 |    320 |
+|    4 |        0.583 |          28.35 |    256 |
+|    5 |        2.136 |           9.03 |    128 |
+|    6 |        0.003 |           3.09 |    128 |
+|    7 |        1.821 |          41.47 |    192 |
+|    8 |        0.667 |          56.65 |    192 |
+|    9 |        0.006 |           2.86 |    128 |
+|   10 |        1.123 |          21.95 |    128 |
+|   11 |        0.384 |          34.41 |    448 |
+|   12 |        0.012 |           2.68 |    128 |
+|   13 |        0.678 |          44.90 |    192 |
+|   14 |        0.575 |          29.61 |    192 |
+|   15 |        0.025 |           2.60 |    128 |
+|   16 |        1.225 |          61.74 |    448 |
+|   17 |        0.073 |          50.19 |    384 |
+-------------------------------------------------
+Estimated total latency: 12.971 ms	Trials: 3528	Used time : 5465 s
+Latency: 20.494730
+
+
+=================================== Layer 10 - 416 =====================================
++-------+--------------+--------+------------------+----------+---------+
+| Index |     Name     |  Type  |   Weight Shape   |  FLOPs   | #Params |
++-------+--------------+--------+------------------+----------+---------+
+|   0   |  feature.0   | Conv2d |  (64, 3, 3, 3)   | 1769472  |   1728  |
+|   1   |  feature.3   | Conv2d |  (64, 64, 3, 3)  | 37748736 |  36864  |
+|   2   |  feature.7   | Conv2d | (128, 64, 3, 3)  | 18874368 |  73728  |
+|   3   |  feature.10  | Conv2d | (128, 128, 3, 3) | 37748736 |  147456 |
+|   4   |  feature.14  | Conv2d | (256, 128, 3, 3) | 18874368 |  294912 |
+|   5   |  feature.17  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   6   |  feature.20  | Conv2d | (256, 256, 3, 3) | 37748736 |  589824 |
+|   7   |  feature.24  | Conv2d | (512, 256, 3, 3) | 18874368 | 1179648 |
+|   8   |  feature.27  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   9   |  feature.30  | Conv2d | (512, 512, 3, 3) | 37748736 | 2359296 |
+|   10  |  feature.34  | Conv2d | (416, 512, 3, 3) | 7667712  | 1916928 |
+|   11  |  feature.37  | Conv2d | (512, 416, 3, 3) | 7667712  | 1916928 |
+|   12  |  feature.40  | Conv2d | (512, 512, 3, 3) | 9437184  | 2359296 |
+|   13  | classifier.0 | Linear |    (512, 512)    |  262144  |  262656 |
+|   14  | classifier.3 | Linear |    (10, 512)     |   5120   |   5130  |
++-------+--------------+--------+------------------+----------+---------+
+FLOPs total: 309924864
+#Params total: 14093514
+Weights: [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1]
+Task 4:  ["2350d19dc42a0665244368384c66b3a5", 1, 2, 2, 416, 3, 3, 416, 512, 1, 1, 1, 512, 1, 2, 2, 512]
+Task 5:  ["a543b40af283ee8e8ccfabc62b2e44e4", 1, 2, 2, 512, 6, 6, 416, 512, 1, 1, 1, 416, 1, 2, 2, 416]
+
