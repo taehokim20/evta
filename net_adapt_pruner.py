@@ -6,13 +6,13 @@ import os
 import warnings
 warnings.filterwarnings(action='ignore')
 import logging
-#import absl.logging
-#logging.root.removeHandler(absl.logging._absl_handler)
+import absl.logging
+logging.root.removeHandler(absl.logging._absl_handler)
 logging.basicConfig(level=logging.WARNING)
-#absl.logging._warn_preinit_stderr = False
-#import sys
-#stderr = sys.stderr
-#sys.stderr = open(os.devnull, 'w')
+absl.logging._warn_preinit_stderr = False
+import sys
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
 ######################
 '''
 from multiprocessing import Process
@@ -43,12 +43,14 @@ import socket
 import sys 
 
 import tvm
-from tvm import relay, autotvm
+from tvm import relay, auto_scheduler
 import numpy as np
 import tvm.relay.testing
 from tvm.autotvm.tuner import XGBTuner, GATuner, RandomTuner, GridSearchTuner
 from tvm import rpc
 from tvm.contrib import utils, ndk, graph_runtime as runtime
+#from tvm.contrib import graph_executor                              ## for normal running
+from tvm.contrib.debugger import debug_executor as graph_executor    ## for debugging
 #from torchsummary import summary
 from nni.compression.pytorch.utils.counter import count_flops_params
 
@@ -280,9 +282,9 @@ class NetAdaptPruner(Pruner):
         test_loss = 0 
         correct = 0 
         total_time = 0 
-        cases = 2 #20
+        cases = 20
         loc = 0 
-        warm_up = 1 #10
+        warm_up = 10
         with torch.no_grad():
             for data, target in self._val_loader:
                 loc = loc + 1 
@@ -402,7 +404,6 @@ class NetAdaptPruner(Pruner):
         img = np.expand_dims(img, 0)
 
         device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
-#        device = torch.device("cpu")
         arch = "arm64"
         target = "llvm -mtriple=%s-linux-android" % arch        
 #        target = "opencl --device=mali"
@@ -417,50 +418,88 @@ class NetAdaptPruner(Pruner):
         log_file = "%s.%s.log" % (device_key, network)
         dtype = "float32"
         use_android = True
-
-        tuning_option = {
-            "log_filename": log_file,
-            "tuner": "xgb",
-            "n_trial": 100,
-            "early_stopping": 50,
-            "measure_option": autotvm.measure_option(
-                builder=autotvm.LocalBuilder(build_func="ndk" if use_android else "default"),
-                runner=autotvm.RPCRunner(device_key, host="0.0.0.0", port=9190, number=5, timeout=10000)
-            )
-        }
 ################################
         self._model_to_prune.eval()
         input_shape = [1, 3, 32, 32]
         output_shape = [1, 10]
         input_data = torch.randn(input_shape).to(device)
         scripted_model = torch.jit.trace(self._model_to_prune, input_data).eval()
+#        scripted_model = torch.jit.trace(torch_model, input_data).eval()
         input_name = "input0"
         shape_list = [(input_name, img.shape)]
         mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
-        
-        tasks = autotvm.task.extract_from_program(
-            mod["main"], target=target, params=params, ops=(relay.op.get("nn.conv2d"), relay.op.get("nn.dense"),)
-        )
-        self._tune_tasks(tasks, **tuning_option)
-
+#        print("=============== Relay IR Params ================")
+#        print(params)
+        ########### NCHW -> NHWC ############
+        desired_layouts = {'nn.conv2d': ['NHWC', 'default'], 'nn.dense': ['NHWC', 'default']}
+        seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
+                                        relay.transform.ConvertLayout(desired_layouts),
+                                        relay.transform.InferType(),
+                                        relay.transform.FoldConstant(),
+#                                        relay.transform.DebugPrint(),
+                                        relay.transform.DeadCodeElimination()])
+        with tvm.transform.PassContext(opt_level=3):
+            mod = seq(mod)
+        print("=============== Relay IR Module ================")
+        print(mod)
+        #####################################
         tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
-        tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9190))
-        key = "android"
-        tracker = rpc.connect_tracker(tracker_host, tracker_port)
-        remote = tracker.request(key, priority=0, session_timeout=0)
-        ctx = remote.cpu(0)  # remote.cl(0)
+        tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9191))
+
+        #################### Extract search tasks ###################
+        print("Extract tasks...")
+        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+#        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl --device=mali", target_host=target)
+        print("=============== Weights check ==============")
+        print(task_weights)
+
+        for idx, task in enumerate(tasks):
+            print("============ Task %d (workload key: %s) ===========" % (idx, task.workload_key))
+            print(task.compute_dag)        
         
-        with autotvm.apply_history_best(log_file):
-            with tvm.transform.PassContext(opt_level=3):
-                lib = relay.build_module.build(mod, target=target, params=params)
-            tmp = utils.tempdir()
-            lib_fname = tmp.relpath("net.so")
-            lib.export_library(lib_fname, ndk.create_shared)
-            remote.upload(lib_fname)
-            rlib = remote.load_module("net.so")
-            module = runtime.GraphModule(rlib["default"](ctx))
+        #################### Tuning #####################
+        print("Begin tuning...")
+        tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
+#        print(tuner.task_tags)
+        tune_option = auto_scheduler.TuningOptions(
+            num_measure_trials=2000, #17,
+            builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
+            runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=10000, repeat=1, min_repeat_ms=200, enable_cpu_cache_flush=True,),
+            measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
+	    verbose=1,
+            early_stopping=24,
+        )
+        tuner.tune(tune_option)#, per_task_early_stopping=30)
+        
+        #################### Compile ####################
+        print("Compile...")
+        with auto_scheduler.ApplyHistoryBest(log_file):
+            with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
+                lib = relay.build_module.build(mod, params=params, target=target)
+#                lib = relay.build(mod, params=params, target="opencl", target_host=target)
+            
+        tmp = utils.tempdir()
+        lib_fname = tmp.relpath("net.so")
+        lib.export_library(lib_fname, ndk.create_shared)
+        remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=10000)
+        remote.upload(lib_fname)
+        rlib = remote.load_module("net.so")
+
+        # Create graph executor
+        ctx = remote.cpu()
+#        ctx = remote.cl(0)
+#        module = graph_executor.GraphModule(rlib["default"](ctx))
+        module = graph_executor.GraphModuleDebug(rlib["default"](ctx), [ctx], rlib.get_json(), dump_root="./tvmdbg")
 
         current_latency = self._test3(module, input_name, ctx, "TVM_initial")
+#        data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
+#        module.set_input(input_name, data_tvm)
+#        print("Evaluate inference time cost...")
+#        ftimer = module.module.time_evaluator("run", ctx, repeat=3, min_repeat_ms=500)
+#        prof_res = np.array(ftimer().results) * 1e3
+#        print("Mean inference time (std dev): %8.4f ms (%8.4f ms)" %(np.mean(prof_res), np.std(prof_res)))
+#        current_latency = np.mean(prof_res)
+        #################################################
         input_data = None
         scripted_model = None
         mod = None
@@ -488,28 +527,29 @@ class NetAdaptPruner(Pruner):
         del rlib
         del module
         gc.collect()
-        print('Relaunch app!')
-        time.sleep(60)
-
         
         pruning_iteration = 1
         delta_num_weights_per_iteration = \
             int(get_total_num_weights(self._model_to_prune, ['Conv2d', 'Linear']) * self._sparsity_per_iteration)
         init_resource_reduction_ratio = 0.025 # 0.05 
         resource_reduction_decay = 0.96 #0.98
-        max_iter = 100
+        max_iter = 120
 
         budget = 13.421 #budget_times * current_fps
         init_resource_reduction = init_resource_reduction_ratio * current_latency
-        print('Budget: ' + str(budget) + ', Current latency: ' + str(current_latency))
+        print('Current latency: {:>8.4f}'.format(current_latency))
         file_object = open('./record_tvm.txt', 'a')
-        file_object.write('Budget: ' + str(budget) + ', Current latency: ' + str(current_latency) + '\n')
+        file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f}\n'.format(budget, current_latency))
         file_object.close()
         current_accuracy = self._evaluator(self._model_to_prune)
         improper_layer = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        subgroup_num = 3
+        subgroup_criterion = 14 - subgroup_num
+        next_additional_cut = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
         # stop condition
-        while pruning_iteration < max_iter and current_latency > budget:
+#        while pruning_iteration < max_iter and current_latency > budget:
+        while pruning_iteration < max_iter and subgroup_criterion > 1 - subgroup_num:
             _logger.info('Pruning iteration: %d', pruning_iteration)
 
             # calculate target sparsity of this iteration
@@ -529,16 +569,44 @@ class NetAdaptPruner(Pruner):
             # variable to store the info of the best layer found in this iteration
             best_op = {}
             improper_idx = 0
+            layer_idx = 1
+            total_channel = 0
 
-#                _logger.debug("op name : %s", wrapper.name)
-#                _logger.debug("op weights : %d", wrapper.weight_mask.numel())
-#                _logger.debug("op left weights : %d", wrapper.weight_mask.sum().item())
             for wrapper in self.get_modules_wrapper():
-
+                if layer_idx < subgroup_criterion:
+                    print('Not in subgroup: layer {:2d}'.format(layer_idx))
+                    layer_idx += 1
+                    improper_idx += 1
+                    continue
                 current_op_sparsity = 1 - wrapper.weight_mask.sum().item() / wrapper.weight_mask.numel()
 
                 # sparsity that this layer needs to prune to satisfy the requirement
-                target_op_sparsity = current_op_sparsity + delta_num_weights_per_iteration / self._calc_num_related_weights(wrapper.name)
+#                target_op_sparsity = current_op_sparsity + delta_num_weights_per_iteration / self._calc_num_related_weights(wrapper.name)
+
+                if layer_idx > 7:
+                    total_channels = 512 
+                elif layer_idx > 4:
+                    total_channels = 256 
+                elif layer_idx > 2:
+                    total_channels = 128 
+                else:
+                    total_channels = 64
+                print('current_op_sparsity: {:>8.4f}'.format(current_op_sparsity))
+                if current_op_sparsity < 0.125:
+                    target_op_sparsity = 0.125 + next_additional_cut[improper_idx] * (8 / total_channels) # initial sparsity
+#                elif current_op_sparsity + 8 / total_channels == 1:
+                elif current_op_sparsity >= 1 - 0.0625:
+                    subgroup_criterion -= 1
+                    improper_layer[improper_idx] = 1 
+                    file_object = open('./record_tvm.txt', 'a')
+                    file_object.write('Improper Layer: {} \n'.format(wrapper.name))
+                    file_object.close()
+                    improper_idx += 1
+                    continue
+                else:
+                    target_op_sparsity = current_op_sparsity + (1 + next_additional_cut[improper_idx]) * (8 / total_channels)
+                ch_num = int((1 - target_op_sparsity) * total_channels)
+                layer_idx += 1
 
                 if improper_layer[improper_idx] == 1:
                     print('Improper layer')
@@ -548,28 +616,18 @@ class NetAdaptPruner(Pruner):
                     improper_idx += 1
                     continue
 
-                if target_op_sparsity >= 1:
-                    _logger.info('Layer %s has no enough weights (remained) to prune', wrapper.name)
-                    print('Improper layer')
-                    file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Improper Layer: ' + wrapper.name + '\n')
-                    file_object.close()
-                    improper_idx += 1
-                    continue
-
+                while_count = 0
 
                 while True:
+                    while_count += 1
                     config_list = self._update_config_list(self._config_list_generated, wrapper.name, target_op_sparsity)
-#                    _logger.debug("config_list used : %s", config_list)
                     pruner = PRUNER_DICT[self._base_algo](copy.deepcopy(self._model_to_prune), config_list)
                     model_masked = pruner.compress()
-#                    summary(model_masked, (3, 32, 32))
 
                     # added 0: speed_up
                     pruner.export_model('./model_masked.pth', './mask.pth')
                     model = VGG(my_shape=self._my_shape, depth=16).to(device)
                     model.load_state_dict(torch.load('./model_masked.pth'))
-#                    summary(model, (3, 32, 32))
                     masks_file = './mask.pth'
                     m_speedup = ModelSpeedup(model, self._dummy_input, masks_file, device)
                     m_speedup.speedup_model()
@@ -579,39 +637,66 @@ class NetAdaptPruner(Pruner):
                     input_shape = [1, 3, 32, 32]
                     output_shape = [1, 10]
                     input_data = torch.randn(input_shape).to(device)
-                    scripted_model = torch.jit.trace(self._model_to_prune, input_data).eval()
+#                    scripted_model = torch.jit.trace(self._model_to_prune, input_data).eval()
+                    scripted_model = torch.jit.trace(model, input_data).eval()
                     input_name = "input0"
                     shape_list = [(input_name, img.shape)]
                     mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
-
-                    tasks = autotvm.task.extract_from_program(
-                        mod["main"], target=target, params=params, ops=(relay.op.get("nn.conv2d"), relay.op.get("nn.dense"),)
-                    )
-                    self._tune_tasks(tasks, **tuning_option)
-
+                    ########### NCHW -> NHWC ############
+                    desired_layouts = {'nn.conv2d': ['NHWC', 'default'], 'nn.dense': ['NHWC', 'default']} # added
+                    seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
+                                          relay.transform.ConvertLayout(desired_layouts)])
+                    with tvm.transform.PassContext(opt_level=3):
+                        mod = seq(mod)
+                    #####################################
                     tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
                     tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9190))
-                    key = "android"
-                    tracker = rpc.connect_tracker(tracker_host, tracker_port)
-                    remote = tracker.request(key, priority=0, session_timeout=0)
-                    ctx = remote.cpu(0)   # remote.cl(0)
+                    #################### Extract search tasks ###################
+                    print("Extract tasks...")
+                    tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+                    print("=============== Weights check ==============")
+                    print(task_weights)
 
-                    with autotvm.apply_history_best(log_file):
-                        with tvm.transform.PassContext(opt_level=3):
-                            lib = relay.build_module.build(mod, target=target, params=params)
-#                    def thread_func(module, ctx):
-                        tmp = utils.tempdir()
-                        lib_fname = tmp.relpath("net.so")
-                        lib.export_library(lib_fname, ndk.create_shared)
-                        temp_str = remote.upload(lib_fname)
-                        rlib = remote.load_module("net.so")
-                        module = runtime.GraphModule(rlib["default"](ctx))
+                    for idx, task in enumerate(tasks):
+                        print("============ Task %d (workload key: %s) ===========" % (idx, task.workload_key))
+                        print(task.compute_dag)
+                    #################### Tuning #####################
+                    print("Begin tuning...")
+                    tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
+                    tune_option = auto_scheduler.TuningOptions(
+                        num_measure_trials=5000,
+                        builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
+                        runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=10000, repeat=1, min_repeat_ms=200, enable_cpu_cache_flush=True,),
+                        measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
+#			verbose=1,
+                    )
+                    tuner.tune(tune_option, per_task_early_stopping=30)
+                    #################### Compile ####################
+                    print("Compile...")
+                    with auto_scheduler.ApplyHistoryBest(log_file):
+                        with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
+                            lib = relay.build(mod, target=target, params=params)
+            
+                    tmp = utils.tempdir()
+                    lib_fname = tmp.relpath("net.so")
+                    lib.export_library(lib_fname, ndk.create_shared)
+                    remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=10000)
+                    remote.upload(lib_fname)
+                    rlib = remote.load_module("net.so")
+                    ctx = remote.cpu()
+#                    ctx = remote.cl()
+                    module = graph_executor.GraphModule(rlib["default"](ctx))
 
-#                    p = Process(target=thread_func, args=(module, ctx))
-#                    p.start()
-#                    p.join()
-#                    print("threading finished")                    
-                    temp_latency = self._test3(module, input_name, ctx, "TVM")
+                    temp_latency = self._test3(module, input_name, ctx, "TVM_initial")
+#                    data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
+#                    module.set_input(input_name, data_tvm)
+#                    print("Evaluate inference time cost...")
+#                    ftimer = module.module.time_evaluator("run", ctx, repeat=3, min_repeat_ms=500)
+#                    prof_res = np.array(ftimer().results) * 1e3
+#                    print("Mean inference time (std dev): %8.4f ms (%8.4f ms)" %(np.mean(prof_res), np.std(prof_res)))
+#                    temp_latency = np.mean(prof_res)
+                    #################################################
+
                     input_data = None
                     scripted_model = None
                     mod = None
@@ -640,24 +725,31 @@ class NetAdaptPruner(Pruner):
                     del module
                     gc.collect()
 
-                    print('temp_latench: ' + str(temp_latency))
-                    print('Layer: ' + wrapper.name + ', target_latency: ' + str(target_latency) + ', temp_latency: ' + str(temp_latency) + ', target_op_sparsity: ' + str(target_op_sparsity))
+                    print('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}'.format(wrapper.name, temp_latency, ch_num))
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Layer: ' + wrapper.name + ', target_latency: ' + str(target_latency) + ', temp_latency: ' + str(temp_latency) + '\n')
+                    file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
                     file_object.close()
 
                     if temp_latency <= target_latency:
+                        next_additional_cut[improper_idx] += int(while_count / 3)
                         break
                     else:
-                        if target_op_sparsity < 0.5:
-                            target_op_sparsity += 0.1
-                        elif target_op_sparsity <= 0.90:
-                            target_op_sparsity += 0.05
+#                        if target_op_sparsity < 1 - 10 / total_channels:
+#                            target_op_sparsity += 8 / total_channels
+#                            ch_num -= 8
+                        if target_op_sparsity < 1 - 0.0625:
+                            if total_channels <= 128 and target_op_sparsity < 1 - 0.125:
+                                target_op_sparsity += 0.125
+                                ch_num -= int(0.125 * total_channels)
+                            else:
+                                target_op_sparsity += 0.0625
+                                ch_num -= int(0.0625 * total_channels)
                         else:
-                            print('Improper layer: ' + wrapper.name)
+                            subgroup_criterion -= 1
+                            print('Improper layer')
                             improper_layer[improper_idx] = 1
                             file_object = open('./record_tvm.txt', 'a')
-                            file_object.write('Improper layer: ' + wrapper.name + '\n')
+                            file_object.write('Improper layer: {} \n'.format(wrapper.name))
                             file_object.close()
                             break
 
@@ -665,14 +757,14 @@ class NetAdaptPruner(Pruner):
                 if improper_layer[improper_idx] == 0:
                     self._short_term_fine_tuner(model_masked, epochs=2)
                     performance = self._evaluator(model_masked)
-                    print('Layer: ' + wrapper.name + ', accuracy after short-term fine tuning: ' + str(performance))
+                    print('Layer: {}, Evaluation result after short-term fine tuning: {:>8.4f}'.format(wrapper.name, performance))
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Layer: ' + wrapper.name + ', Accuracy: ' + str(performance) + '\n')
+                    file_object.write('Layer: {}, Accuracy: {:>8.4f}\n'.format(wrapper.name, performance))
                     file_object.close()
 
                 if temp_latency <= target_latency and \
                     ( not best_op \
-                    or (self._optimize_mode is OptimizeMode.Maximize and performance > best_op['performance']) \
+                    or (self._optimize_mode is OptimizeMode.Maximize and performance >= best_op['performance']) \
                     or (self._optimize_mode is OptimizeMode.Minimize and performance < best_op['performance'])):
                     _logger.debug("updating best layer to %s...", wrapper.name)
                     # find weight mask of this layer
@@ -684,6 +776,8 @@ class NetAdaptPruner(Pruner):
                     best_op = {
                         'op_name': wrapper.name,
                         'sparsity': target_op_sparsity,
+                        'ch_num': ch_num,
+                        'improper_idx': improper_idx,
                         'latency': temp_latency,
                         'performance': performance,
                         'masks': masks
@@ -694,15 +788,15 @@ class NetAdaptPruner(Pruner):
                     # save model weights
                     pruner.export_model(self._tmp_model_path)
 
-                print('Relaunch app!')
-                time.sleep(60)
+#                print('Relaunch app!')
+#                time.sleep(60)
                 improper_idx += 1
 
             if not best_op:
-                # decrease pruning step
-                self._sparsity_per_iteration *= 0.5
-                _logger.info("No more layers to prune, decrease pruning step to %s", self._sparsity_per_iteration)
-                pruning_iteration = max_iter
+#                # decrease pruning step
+#                self._sparsity_per_iteration *= 0.5
+#                _logger.info("No more layers to prune, decrease pruning step to %s", self._sparsity_per_iteration)
+#                pruning_iteration = max_iter
                 continue
 
             # Pick the best layer to prune, update iterative information
@@ -712,9 +806,9 @@ class NetAdaptPruner(Pruner):
 
             # update weights parameters
             self._model_to_prune.load_state_dict(torch.load(self._tmp_model_path))
-            print('Budget: ' + str(budget) + ', current_latency: ' + str(best_op['latency']))
+            print('Budget: {:>8.4f}, Current latency: {:>8.4f}'.format(budget, best_op['latency']))
             file_object = open('./record_tvm.txt', 'a')
-            file_object.write('Budget: ' + str(budget) + ', current_latency: ' + str(best_op['latency']) + '\n')
+            file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f} \n'.format(budget, best_op['latency']))
 
             # update mask of the chosen op
             for wrapper in self.get_modules_wrapper():
@@ -723,24 +817,24 @@ class NetAdaptPruner(Pruner):
                         setattr(wrapper, k, best_op['masks'][k])
                     break
 
-            file_object.write('Layer ' + best_op['op_name'] + ', selected with sparsity ' + str(best_op['sparsity']) + ', latency ' + str(best_op['latency']) + ', accuracy after pruning and short-term fine-tuning: ' + str(best_op['performance']) + '\n')
+            file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
             file_object.close()
 #            current_sparsity = target_sparsity
 #            _logger.info('Pruning iteration %d finished, current sparsity: %s', pruning_iteration, current_sparsity)
-            _logger.info('Layer %s seleted with sparsity %s, performance after pruning & short term fine-tuning : %s',
-                         best_op['op_name'], best_op['sparsity'], best_op['performance'])
+            _logger.info('Layer %s seleted with sparsity %s, performance after pruning & short term fine-tuning : %s', best_op['op_name'], best_op['sparsity'], best_op['performance'])
             pruning_iteration += 1
+            next_additional_cut[best_op['improper_idx']] = 0
 
             self._final_performance = best_op['performance']
 
         # load weights parameters
         self.load_model_state_dict(torch.load(self._tmp_model_path))
-        os.remove(self._tmp_model_path)
+#        os.remove(self._tmp_model_path)
 
         _logger.info('----------Compression finished--------------')
         _logger.info('config_list generated: %s', self._config_list_generated)
         _logger.info("Performance after pruning: %s", self._final_performance)
-        _logger.info("Masked sparsity: %.6f", current_sparsity)
+#        _logger.info("Masked sparsity: %.6f", current_sparsity)
 
         # save best config found and best performance
         with open(os.path.join(self._experiment_data_dir, 'search_result.json'), 'w') as jsonfile:
