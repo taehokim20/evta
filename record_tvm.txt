@@ -1,0 +1,28 @@
+Budget:   8.5270, Current latency:  17.0540
+Process iteration   1: current_accuracy =    0.934, current_latency =   17.054, target_resource =   16.628 
+Layer: feature.0, Temp latency:  22.0393, Channel:   56
+Layer: feature.3, Temp latency:  21.4197, Channel:   56
+Layer: feature.7, Temp latency:  21.0185, Channel:  120
+Layer: feature.10, Temp latency:  22.5436, Channel:  120
+Layer: feature.14, Temp latency:  17.7905, Channel:  248
+Layer: feature.17, Temp latency:  17.9156, Channel:  248
+Layer: feature.20, Temp latency:  19.2923, Channel:  248
+
+
+Budget:   8.6073, Current latency:  17.2145
+Process iteration   1: current_accuracy =    0.934, current_latency =   17.215, target_resource =   16.784 
+Layer: feature.0, Temp latency:  15.0024, Channel:   56
+Layer: feature.0, Accuracy:   0.9323
+Layer: feature.3, Temp latency:  14.7385, Channel:   56
+Layer: feature.3, Accuracy:   0.9306
+Layer: feature.7, Temp latency:  17.5143, Channel:  120
+Layer: feature.10, Temp latency:  15.0668, Channel:  120
+Layer: feature.10, Accuracy:   0.9327
+Layer: feature.14, Temp latency:  15.1350, Channel:  248
+Layer: feature.14, Accuracy:   0.9330
+Layer: feature.17, Temp latency:  14.6450, Channel:  248
+Layer: feature.17, Accuracy:   0.9323
+Layer: feature.20, Temp latency:  14.6023, Channel:  248
+Layer: feature.20, Accuracy:   0.9325
+Layer: feature.24, Temp latency:  15.6032, Channel:  504
+Layer: feature.24, Accuracy:   0.9341

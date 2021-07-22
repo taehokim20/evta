@@ -458,7 +458,7 @@ class NetAdaptPruner(Pruner):
         tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
 
         tune_option = auto_scheduler.TuningOptions(
-            num_measure_trials=17,
+            num_measure_trials=200,
             builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
             runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=10000, repeat=1, min_repeat_ms=200, enable_cpu_cache_flush=True,),
             measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
@@ -611,7 +611,7 @@ class NetAdaptPruner(Pruner):
                 print("Begin tuning...")
                 tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
                 tune_option = auto_scheduler.TuningOptions(
-                    num_measure_trials=17, #5000,
+                    num_measure_trials=200, #5000,
                     builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
                     runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=10000, repeat=1, min_repeat_ms=200, enable_cpu_cache_flush=True,),
                     measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
