@@ -497,12 +497,12 @@ class NetAdaptPruner(Pruner):
 #        current_latency = np.mean(prof_res)
         #################################################
         
-        pruning_iteration = 1
+        pruning_iteration = 0
         delta_num_weights_per_iteration = \
             int(get_total_num_weights(self._model_to_prune, ['Conv2d', 'Linear']) * self._sparsity_per_iteration)
         init_resource_reduction_ratio = 0.025 # 0.05 
         resource_reduction_decay = 0.96 #0.98
-        max_iter = 120
+        max_iter = 30
 
         budget = 0.5 * current_latency
         init_resource_reduction = init_resource_reduction_ratio * current_latency
@@ -517,6 +517,7 @@ class NetAdaptPruner(Pruner):
         # stop condition
         while pruning_iteration < max_iter and current_latency > budget:
             _logger.info('Pruning iteration: %d', pruning_iteration)
+
 
             # calculate target sparsity of this iteration
 #            target_sparsity = current_sparsity + self._sparsity_per_iteration
@@ -537,27 +538,54 @@ class NetAdaptPruner(Pruner):
             best_op = {}
             layer_idx = 1
             total_channel = 0
+            times_num = 4
 
             for wrapper in self.get_modules_wrapper():
+#                if pruning_iteration == 0:
+#                    self._config_list_generated = self._update_config_list(
+#                        self._config_list_generated, wrapper.name, 0.375)
+#                # update mask of the chosen op
+#                config_list = self._update_config_list(self._config_list_generated, wrapper.name, target_op_sparsity)
+#                pruner = PRUNER_DICT[self._base_algo](copy.deepcopy(self._model_to_prune), config_list)
+#                model_masked = pruner.compress()
+#                for w in pruner.get_modules_wrapper():
+#                    if w.name == wrapper.name:
+#                        masks = {'weight_mask': w.weight_mask,
+#                                 'bias_mask': w.bias_mask}
+#                        break
+#                for k in masks:
+#                    setattr(wrapper, k, masks[k])
+#                continue
+
+#                for wrapper in self.get_modules_wrapper():
+#                    if wrapper.name == best_op['op_name']:
+#                        for k in best_op['masks']:
+#                            setattr(wrapper, k, best_op['masks'][k])
+#                        break
+#                    continue
                 current_op_sparsity = 1 - wrapper.weight_mask.sum().item() / wrapper.weight_mask.numel()
+                # sparsity that this layer needs to prune to satisfy the requirement
+#                target_op_sparsity = current_op_sparsity + delta_num_weights_per_iteration / self._calc_num_related_weights(wrapper.name)
 
                 if layer_idx > 7:
                     total_channel = 512 
+                    times_num = 16
                 elif layer_idx > 4:
                     total_channel = 256 
+                    times_num = 8
                 elif layer_idx > 2:
                     total_channel = 128 
+                    times_num = 4
                 else:
                     total_channel = 64
-                # sparsity that this layer needs to prune to satisfy the requirement
-#                target_op_sparsity = current_op_sparsity + delta_num_weights_per_iteration / self._calc_num_related_weights(wrapper.name)
-#                print('target_op_sparsity: {:>8.4f}, delta_num_weights_per_iteration: {:4d}, _calc_num_related_weights: {:>8.4f}'.format(target_op_sparsity, delta_num_weights_per_iteration, self._calc_num_related_weights(wrapper.name)))
-#                continue
-                target_op_sparsity = (1 - current_op_sparsity) * pruning_iteration * (8 / total_channel)
-                temp_times = round(target_op_sparsity / (8 / total_channel))
-                target_op_sparsity = temp_times * (8 / total_channel)
+                    times_num = 2
+                target_op_sparsity = 0.375 + pruning_iteration * (times_num / total_channel)
                 layer_idx += 1
-                print('current_op_sparsity: {:>8.4f}, target_op_sparsity: {:>8.4f}'.format(current_op_sparsity, target_op_sparsity))
+                if layer_idx <= 3 and pruning_iteration % 2 == 0:
+                    file_object = open('./record_tvm.txt', 'a')
+                    file_object.write('NOT pruning 2 channels: ' + wrapper.name + '\n')
+                    file_object.close()
+                    continue
 
                 if target_op_sparsity >= 0.95:
                     print('Improper Layer')
@@ -649,7 +677,7 @@ class NetAdaptPruner(Pruner):
 
                 if temp_latency <= target_latency:
                     # Short-term fine tune the pruned model
-                    self._short_term_fine_tuner(model_masked, epochs=2)
+                    self._short_term_fine_tuner(model_masked, epochs=10) #2
                     performance = self._evaluator(model_masked)
                     print('Layer: {}, Evaluation result after short-term fine tuning: {:>8.4f}'.format(wrapper.name, performance))
                     file_object = open('./record_tvm.txt', 'a')
@@ -692,32 +720,32 @@ class NetAdaptPruner(Pruner):
 #                pruning_iteration = max_iter
 #                continue
 
-            # Pick the best layer to prune, update iterative information
-            # update config_list
-            self._config_list_generated = self._update_config_list(
-                self._config_list_generated, best_op['op_name'], best_op['sparsity'])
+            if pass_target_latency == 1:
+                # Pick the best layer to prune, update iterative information
+                # update config_list
+                self._config_list_generated = self._update_config_list(
+                    self._config_list_generated, best_op['op_name'], best_op['sparsity'])
 
-            # update weights parameters
-            self._model_to_prune.load_state_dict(torch.load(self._tmp_model_path))
-            print('Budget: {:>8.4f}, Current latency: {:>8.4f}'.format(budget, best_op['latency']))
-            file_object = open('./record_tvm.txt', 'a')
-            file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f} \n'.format(budget, best_op['latency']))
+                # update weights parameters
+                self._model_to_prune.load_state_dict(torch.load(self._tmp_model_path))
+                print('Budget: {:>8.4f}, Current latency: {:>8.4f}'.format(budget, best_op['latency']))
+                file_object = open('./record_tvm.txt', 'a')
+                file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f} \n'.format(budget, best_op['latency']))
 
-            # update mask of the chosen op
-            for wrapper in self.get_modules_wrapper():
-                if wrapper.name == best_op['op_name']:
-                    for k in best_op['masks']:
-                        setattr(wrapper, k, best_op['masks'][k])
-                    break
+                # update mask of the chosen op
+                for wrapper in self.get_modules_wrapper():
+                    if wrapper.name == best_op['op_name']:
+                        for k in best_op['masks']:
+                            setattr(wrapper, k, best_op['masks'][k])
+                        break
 
-            file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
-            file_object.close()
-#            current_sparsity = target_sparsity
-#            _logger.info('Pruning iteration %d finished, current sparsity: %s', pruning_iteration, current_sparsity)
-            _logger.info('Layer %s seleted with sparsity %s, performance after pruning & short term fine-tuning : %s', best_op['op_name'], best_op['sparsity'], best_op['performance'])
+                file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
+                file_object.close()
+#                current_sparsity = target_sparsity
+#                _logger.info('Pruning iteration %d finished, current sparsity: %s', pruning_iteration, current_sparsity)
+                _logger.info('Layer %s seleted with sparsity %s, performance after pruning & short term fine-tuning : %s', best_op['op_name'], best_op['sparsity'], best_op['performance'])
+                self._final_performance = best_op['performance']
             pruning_iteration += 1
-
-            self._final_performance = best_op['performance']
 
         # load weights parameters
         self.load_model_state_dict(torch.load(self._tmp_model_path))
