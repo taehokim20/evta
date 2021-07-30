@@ -1,0 +1,67 @@
+Budget:   6.7169, Current latency:  13.4337
+Process iteration   0: current_accuracy =    0.934, current_latency =   13.434, target_resource =   13.084 
+Process iteration   1: current_accuracy =    0.934, current_latency =   13.434, target_resource =   13.084 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  16.6380, Channel:   92
+Budget:   6.7077, Current latency:  13.4154
+Process iteration   0: current_accuracy =    0.934, current_latency =   13.415, target_resource =   13.066 
+Process iteration   1: current_accuracy =    0.934, current_latency =   13.415, target_resource =   13.066 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  15.2663, Channel:   92
+Budget:   7.5327, Current latency:  15.0654
+Process iteration   0: current_accuracy =    0.934, current_latency =   15.065, target_resource =   14.673 
+Process iteration   1: current_accuracy =    0.934, current_latency =   15.065, target_resource =   14.673 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  15.3894, Channel:   92
+Budget:   6.9643, Current latency:  13.9286
+Process iteration   1: current_accuracy =    0.934, current_latency =   13.929, target_resource =   13.580 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  14.2407, Channel:   92
+Layer: feature.10, Temp latency:  14.9630, Channel:   92
+
+
+Budget:   6.8159, Current latency:  13.6318
+Process iteration   1: current_accuracy =    0.934, current_latency =   13.632, target_resource =   13.291 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  13.7092, Channel:   92
+Layer: feature.10, Temp latency:  14.2102, Channel:   92
+Layer: feature.14, Temp latency:  13.8236, Channel:  184
+Layer: feature.17, Temp latency:  13.5638, Channel:  184
+Layer: feature.20, Temp latency:  13.6584, Channel:  184
+Layer: feature.24, Temp latency:  14.0160, Channel:  368
+Layer: feature.27, Temp latency:  14.5008, Channel:  368
+Layer: feature.30, Temp latency:  14.2330, Channel:  368
+Layer: feature.34, Temp latency:  15.0856, Channel:  368
+Layer: feature.37, Temp latency:  14.7499, Channel:  368
+Layer: feature.40, Temp latency:  14.7788, Channel:  368
+Process iteration   2: current_accuracy =    0.934, current_latency =   13.632, target_resource =   13.291 
+Layer: feature.0, Temp latency:  13.8330, Channel:   44
+Layer: feature.3, Temp latency:  18.3249, Channel:   44
+Layer: feature.7, Temp latency:  13.3484, Channel:   88
+Layer: feature.10, Temp latency:  13.7806, Channel:   88
+Layer: feature.14, Temp latency:  13.3600, Channel:  176
+Layer: feature.17, Temp latency:  13.5993, Channel:  176
+Layer: feature.20, Temp latency:  13.5651, Channel:  176
+Layer: feature.24, Temp latency:  14.2047, Channel:  352
+Layer: feature.27, Temp latency:  14.0173, Channel:  352
+Layer: feature.30, Temp latency:  14.2215, Channel:  352
+Layer: feature.34, Temp latency:  14.7182, Channel:  352
+Layer: feature.37, Temp latency:  14.7714, Channel:  352
+Layer: feature.40, Temp latency:  14.8210, Channel:  352
+Process iteration   3: current_accuracy =    0.934, current_latency =   13.632, target_resource =   13.291 
+NOT pruning 2 channels: feature.0
+NOT pruning 2 channels: feature.3
+Layer: feature.7, Temp latency:  14.1430, Channel:   84
+Layer: feature.10, Temp latency:  13.1464, Channel:   84
+Layer: feature.10, Accuracy:   0.9245
+Layer: feature.14, Temp latency:  14.1237, Channel:  168
+Layer: feature.17, Temp latency:  13.7140, Channel:  168
+Layer: feature.20, Temp latency:  13.8566, Channel:  168
+Layer: feature.24, Temp latency:  13.6235, Channel:  336
+Layer: feature.27, Temp latency:  13.7073, Channel:  336
+Layer: feature.30, Temp latency:  14.0917, Channel:  336
