@@ -327,55 +327,6 @@ class NetAdaptPruner(Pruner):
 
         return latency
 
-    def _tune_tasks(
-        self,
-        tasks,
-        measure_option,
-        tuner="xgb",
-        n_trial=1000,
-        early_stopping=None,
-        log_filename="tuning.log",
-        use_transfer_learning=True,
-    ):
-        # create tmp log file
-        tmp_log_file = log_filename + ".tmp"
-        if os.path.exists(tmp_log_file):
-            os.remove(tmp_log_file)
-
-        for i, tsk in enumerate(reversed(tasks)):
-            prefix = "[Task %2d/%2d] " % (i+1, len(tasks))
-            # create tuner
-            if tuner == "xgb" or tuner == "xgb-rank":
-                tuner_obj = XGBTuner(tsk, loss_type="rank")
-            elif tuner == "ga":
-                tuner_obj = GATuner(tsk, pop_size=100)
-            elif tuner == "random":
-                tuner_obj = RandomTuner(tsk)
-            elif tuner == "gridsearch":
-                tuner_obj = GridSearchTuner(tsk)
-            else:
-                raise ValueError("Invalid tuner: " + tuner)
-
-            if use_transfer_learning:
-                if os.path.isfile(tmp_log_file):
-                    tuner_obj.load_history(autotvm.record.load_from_file(tmp_log_file))
-
-            # do tuning
-            tsk_trial = min(n_trial, len(tsk.config_space))
-            tuner_obj.tune(
-                n_trial=tsk_trial,
-                early_stopping=early_stopping,
-                measure_option=measure_option,
-                callbacks=[
-                    autotvm.callback.progress_bar(tsk_trial, prefix=prefix),
-                    autotvm.callback.log_to_file(tmp_log_file),
-                ],
-            )
-
-        # pick best records to a cache file
-        autotvm.record.pick_best(tmp_log_file, log_filename)
-        os.remove(tmp_log_file)
-
     def compress(self):
         """
         Compress the model.
@@ -408,10 +359,6 @@ class NetAdaptPruner(Pruner):
         target = "llvm -mtriple=%s-linux-android" % arch        
 #        target = "opencl --device=mali"
 #        target_host = "llvm -mtriple=arm64-linux-android"
-#        my_shape = cPickle.load(open(os.path.join('/github/evta2/output', str(num), 'my_shape.p'),'rb'))
-#        torch_model = VGG(my_shape=my_shape, depth=16).to(device)
-#        torch_model.load_state_dict(torch.load(os.path.join('/github/evta2/output', str(num), 'model_trained.pth')))
-#        torch_model.eval()
 ################# Autotune added
         network = "vgg"
         device_key = "android"
