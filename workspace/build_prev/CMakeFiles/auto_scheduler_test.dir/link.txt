@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++14 -O2 -Wall -fPIC    CMakeFiles/auto_scheduler_test.dir/tests/cpp/auto_scheduler_test.cc.o  -o auto_scheduler_test -rdynamic libtvm.so -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread -ldl -pthread -Wl,-rpath,/workspace/build 

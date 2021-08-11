@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++14 -O2 -Wall -fPIC    CMakeFiles/container_test.dir/tests/cpp/container_test.cc.o  -o container_test -rdynamic libtvm.so -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread -ldl -pthread -Wl,-rpath,/workspace/build 

@@ -1,0 +1,14 @@
+# Target labels
+ project_libbacktrace
+# Source files and their labels
+/workspace/build/CMakeFiles/project_libbacktrace
+/workspace/build/CMakeFiles/project_libbacktrace.rule
+/workspace/build/CMakeFiles/project_libbacktrace-complete.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-install.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-mkdir.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-download.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-update.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-patch.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-configure.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-build.rule
+/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-checkout.rule

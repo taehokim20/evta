@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++14 -O2 -Wall -fPIC    CMakeFiles/tir_analysis_side_effect.dir/tests/cpp/tir_analysis_side_effect.cc.o  -o tir_analysis_side_effect -rdynamic libtvm.so -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread -ldl -pthread -Wl,-rpath,/workspace/build 

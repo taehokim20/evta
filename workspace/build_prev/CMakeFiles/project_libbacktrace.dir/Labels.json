@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/workspace/build/CMakeFiles/project_libbacktrace"
+		},
+		{
+			"file" : "/workspace/build/CMakeFiles/project_libbacktrace.rule"
+		},
+		{
+			"file" : "/workspace/build/CMakeFiles/project_libbacktrace-complete.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-install.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-mkdir.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-download.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-update.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-patch.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-configure.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-build.rule"
+		},
+		{
+			"file" : "/workspace/build/libbacktrace/src/project_libbacktrace-stamp/project_libbacktrace-checkout.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"project_libbacktrace"
+		],
+		"name" : "project_libbacktrace"
+	}
+}

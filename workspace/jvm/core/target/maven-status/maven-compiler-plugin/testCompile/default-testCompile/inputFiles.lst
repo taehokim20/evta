@@ -1,0 +1,6 @@
+/workspace/jvm/core/src/test/java/org/apache/tvm/contrib/GraphExecutorTest.java
+/workspace/jvm/core/src/test/java/org/apache/tvm/rpc/RPCTest.java
+/workspace/jvm/core/src/test/java/org/apache/tvm/TestUtils.java
+/workspace/jvm/core/src/test/java/org/apache/tvm/FunctionTest.java
+/workspace/jvm/core/src/test/java/org/apache/tvm/ModuleTest.java
+/workspace/jvm/core/src/test/java/org/apache/tvm/NDArrayTest.java

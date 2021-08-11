@@ -1,0 +1,13 @@
+#surefire
+#Wed Jun 02 21:02:25 UTC 2021
+test.rpc.proxy.host=localhost
+cxx=g++
+user.dir=/workspace/jvm/core
+test.rpc.proxy.port=9000
+cflags=-std\=c++11 -Wall -O2 -Iinclude -I/workspace/3rdparty/dlpack/include -I/workspace/3rdparty/dmlc-core/include -fPIC
+ldflags=
+localRepository=/root/.m2/repository
+basedir=/workspace/jvm/core
+skipTests=false
+test.tempdir=/tmp/tmp.TYwLzi3FIx
+current_libdir=/workspace/ build

@@ -1,0 +1,16 @@
+org/apache/tvm/rpc/RPCTest.class
+org/apache/tvm/FunctionTest$2.class
+org/apache/tvm/contrib/GraphExecutorTest.class
+org/apache/tvm/ModuleTest.class
+org/apache/tvm/FunctionTest.class
+org/apache/tvm/rpc/RPCTest$3.class
+org/apache/tvm/FunctionTest$1.class
+org/apache/tvm/FunctionTest$5.class
+org/apache/tvm/rpc/RPCTest$2.class
+org/apache/tvm/FunctionTest$4.class
+org/apache/tvm/FunctionTest$5$1.class
+org/apache/tvm/FunctionTest$3.class
+org/apache/tvm/TestUtils$RefInt.class
+org/apache/tvm/rpc/RPCTest$1.class
+org/apache/tvm/TestUtils.class
+org/apache/tvm/NDArrayTest.class

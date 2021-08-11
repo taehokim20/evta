@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueDouble.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/API.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMType.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/NDArrayBase.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueLong.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueNull.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/NativeLibraryLoader.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/Module.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/LibInfo.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/Device.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/ArgTypeCode.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/contrib/GraphExecutor.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/contrib/GraphModule.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/ConnectTrackerServerProcessor.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/SocketChannel.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/Client.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/RPCWatchdog.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/StandaloneServerProcessor.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/ServerProcessor.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/TVMRemoteDevice.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/Utils.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/RPCSession.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/RPC.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/ConnectProxyServerProcessor.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/Server.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/rpc/NativeServerLoop.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/APIInternal.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/Function.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/NDArray.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/Base.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueBytes.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueHandle.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValue.java">
+</file>
+<file name="/workspace/jvm/core/src/main/java/org/apache/tvm/TVMValueString.java">
+</file>
+</checkstyle>

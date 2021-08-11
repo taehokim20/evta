@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++14 -O2 -Wall -fPIC    CMakeFiles/ir_functor_test.dir/tests/cpp/ir_functor_test.cc.o  -o ir_functor_test -rdynamic libtvm.so -Wl,-Bstatic -lgtest -Wl,-Bdynamic -lpthread -ldl -pthread -Wl,-rpath,/workspace/build 
