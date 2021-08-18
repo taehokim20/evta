@@ -324,11 +324,10 @@ class TaskScheduler:
         self.ct = self.best_ct = 0
         self.tic = time.time()
 
-#        # reset num_measures_per_round to make sure every task is tuned at least once
-#        self.num_measures_per_round = min(
-#            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
-#        )
-        self.num_measures_per_round = 1
+        # reset num_measures_per_round to make sure every task is tuned at least once
+        self.num_measures_per_round = min(
+            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
+        )
         if self.num_measures_per_round <= 0:
             raise ValueError(
                 "num_measure_trials is too small. Please set it to a higher value."
@@ -358,11 +357,6 @@ class TaskScheduler:
                 self._tune_task(idx)
         self.best_ct = self.ct
         self.best_score = self.cur_score
-
-        # reset num_measures_per_round to make sure every task is tuned at least once
-        self.num_measures_per_round = min(
-            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
-        )
 
         # use the specific strategy to choose workload to tune
         task_idx = -1
@@ -423,9 +417,7 @@ class TaskScheduler:
                     )
                     assert grad <= 0
                     gradients.append(grad)
-                
-                print("================== gradients =========================")
-                print(gradients)
+
                 if max(gradients) == min(gradients):
                     task_idx = np.random.choice(len(gradients))
                 else:
@@ -460,6 +452,7 @@ class TaskScheduler:
         measure_inputs, measure_results = self.search_policies[task_idx].continue_search_one_round(
             self.num_measures_per_round, self.measurer
         )
+
         self.task_cts[task_idx] += 1
 
         for res in measure_results:
@@ -582,12 +575,8 @@ class PrintTableInfo(TaskSchedulerCallback):
             return
 
         _ffi_api.PrintTitle("Task Scheduler")
-        file_object = open('./printTable.txt', 'a')
         print("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |")
         print("-------------------------------------------------")
-        if task_scheduler.ct >= len(task_scheduler.tasks):
-            file_object.write("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |\n")
-            file_object.write("-------------------------------------------------\n")
 
         # content
         for i in range(len(task_scheduler.tasks)):
@@ -603,18 +592,9 @@ class PrintTableInfo(TaskSchedulerCallback):
                 if task_scheduler.best_costs[i] < 1e9
                 else "-"
             )
-#            trials_str = "%d" % (task_scheduler.task_cts[i] * task_scheduler.num_measures_per_round)
-            if task_scheduler.task_cts[i] <= 1:
-                trials_str = "%d" % (task_scheduler.task_cts[i])
-            else:
-                trials_str = "%d" % (1 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
+            trials_str = "%d" % (task_scheduler.task_cts[i] * task_scheduler.num_measures_per_round)
             print("| %4s | %12s | % 14s | %6s |" % (id_str, latency_str, speed_str, trials_str))
-            if task_scheduler.ct >= len(task_scheduler.tasks):
-                file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
-                
-        print("-------------------------------------------------")        
-        if task_scheduler.ct >= len(task_scheduler.tasks):            
-            file_object.write("-------------------------------------------------\n")
+        print("-------------------------------------------------")
 
         # overall info
         if all(cost < 1e9 for cost in task_scheduler.best_costs):
@@ -630,15 +610,6 @@ class PrintTableInfo(TaskSchedulerCallback):
                 task_id,
             )
         )
-        if task_scheduler.ct >= len(task_scheduler.tasks):            
-            file_object.write("Estimated total latency: %s ms\tTrials: %d\tUsed time : %.0f s\tNext ID: %d\t\n"
-            % (total_latency_str, task_scheduler.ct, time.time() - task_scheduler.tic, task_id,))
-        file_object.close()
-        ############ Taeho addition ###############
-#        if
-#        file_object = open('./record_tvm.txt', 'a')
-#        file_object.write('Used time: {:8.4f} s, '.format(time.time() - task_scheduler.tic))
-        ###########################################
 
 
 class LogEstimatedLatency(TaskSchedulerCallback):
