@@ -359,12 +359,6 @@ class NetAdaptPruner(Pruner):
         device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
         arch = "arm64"
         target = "llvm -mtriple=%s-linux-android" % arch        
-#        target = "opencl --device=mali"
-#        target_host = "llvm -mtriple=arm64-linux-android"
-#        my_shape = cPickle.load(open(os.path.join('/github/evta2/output', str(num), 'my_shape.p'),'rb'))
-#        torch_model = VGG(my_shape=my_shape, depth=16).to(device)
-#        torch_model.load_state_dict(torch.load(os.path.join('/github/evta2/output', str(num), 'model_trained.pth')))
-#        torch_model.eval()
 ################# Autotune added
         network = "vgg"
         device_key = "android"
@@ -411,7 +405,7 @@ class NetAdaptPruner(Pruner):
 
         #################### Extract search tasks ###################
         print("Extract tasks...")
-#        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl --device=mali", target_host=target)
+#        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
         tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
 
         layer_tasks = [-1 for i in range(conv2d_num)]
@@ -438,7 +432,7 @@ class NetAdaptPruner(Pruner):
             builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
             runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=10000, repeat=1, min_repeat_ms=200, enable_cpu_cache_flush=True,),
             measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
-	    verbose=1,
+	        verbose=1,
             early_stopping=24,
         )
         tuner.tune(tune_option)#, per_task_early_stopping=30)
@@ -464,7 +458,7 @@ class NetAdaptPruner(Pruner):
         with auto_scheduler.ApplyHistoryBest(log_file):
             with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
                 lib = relay.build_module.build(mod, params=params, target=target)
-#                lib = relay.build(mod, params=params, target="opencl", target_host=target)
+#                lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
             
         tmp = utils.tempdir()
         lib_fname = tmp.relpath("net.so")
@@ -608,7 +602,7 @@ class NetAdaptPruner(Pruner):
                 #################### Extract search tasks ###################
                 print("Extract tasks...")
                 tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
-#                tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl --device=mali", target_host=target)
+#                tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
                 layer_tasks_temp = [-1 for i in range(conv2d_num)]
                 task_times_temp = [-1 for i in range(conv2d_num)]
                 pos = conv2d_num - 1
@@ -639,7 +633,8 @@ class NetAdaptPruner(Pruner):
                 print("Compile...")
                 with auto_scheduler.ApplyHistoryBest(log_file):
                     with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
-                        lib = relay.build(mod, target=target, params=params)
+                        lib = relay.build(mod, params=params, target=target)
+#                        lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
           
                 tmp = utils.tempdir()
                 lib_fname = tmp.relpath("net.so")
