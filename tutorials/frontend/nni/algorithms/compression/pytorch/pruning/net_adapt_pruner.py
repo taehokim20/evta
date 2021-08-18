@@ -505,7 +505,8 @@ class NetAdaptPruner(Pruner):
         current_accuracy = self._evaluator(self._model_to_prune)
         pass_target_latency = 0
         target_latency = current_latency - init_resource_reduction * (resource_reduction_decay ** (pruning_iteration - 1))
-        pruning_times = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        pruning_times = [0 for i in range(conv2d_num)]
+#        pruning_times = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
         # stop condition
         while pruning_iteration < max_iter and current_latency > budget:
