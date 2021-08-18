@@ -17,6 +17,7 @@
 # coding: utf-8
 # pylint: disable=invalid-name, protected-access, too-many-branches, global-statement, unused-import
 """Function configuration API."""
+import time
 import ctypes
 import traceback
 from numbers import Number, Integral
@@ -234,7 +235,8 @@ class PackedFuncBase(object):
             )
             != 0
         ):
-            raise get_last_ffi_error()
+            print("Avoid get_last_ffi_error")  # Taeho checked
+#            raise get_last_ffi_error()
         _ = temp_args
         _ = args
         return RETURN_SWITCH[ret_tcode.value](ret_val)
