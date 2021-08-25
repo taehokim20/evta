@@ -438,7 +438,7 @@ class NetAdaptPruner(Pruner):
                 pos -= 1
             
         task_times_rank = np.array([17, 9, 7, 6, 4, 5, 10, 16, 12, 13, 8, 11, 0, 14, 15, 1, 19, 18, 2, 3])
-        
+        tune_trials = 400
         pruning_iteration = 0
         init_resource_reduction_ratio = 0.025 # 0.05 
         resource_reduction_decay = 0.96 #0.98
@@ -454,11 +454,12 @@ class NetAdaptPruner(Pruner):
         current_accuracy = self._evaluator(self._model_to_prune)
         pass_target_latency = 0
 #        target_latency = current_latency - init_resource_reduction * (resource_reduction_decay ** (pruning_iteration - 1))
-#        pruning_times = [0 for i in range(conv2d_num)]
+        pruning_times = [0 for i in range(conv2d_num)]
 #        pruning_times = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         target_latency = 9.0726
         prev_short_acc = 0
         performance = 0
+        total_estimated_latency = 8.5569
 
         # stop condition
         while pruning_iteration < max_iter and current_latency > budget:
@@ -474,10 +475,11 @@ class NetAdaptPruner(Pruner):
             # Print the message
             print('=======================')
             print(('Process iteration {:>3}: current_accuracy = {:>8.4f}, '
-                    'current_latency = {:>8.4f}, target_latency = {:>8.4f} \n').format(pruning_iteration, current_accuracy, current_latency, target_latency))            
+                    'current_latency = {:>8.4f}, target_latency = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_latency, target_latency, total_estimated_latency, tune_trials))            
             file_object = open('./record_tvm.txt', 'a')            
             file_object.write(('Process iteration {:>3}: current_accuracy = {:>8.4f}, '
-                   'current_latency = {:>8.4f}, target_resource = {:>8.4f} \n').format(pruning_iteration, current_accuracy, current_latency, target_latency))
+                   'current_latency = {:>8.4f}, target_latency = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d}  \n').format(pruning_iteration, current_accuracy, current_latency, target_latency, total_estimated_latency, tune_trials))
+            file_object.write('Current pruning_times: ' + str(pruning_times) + '\n')
             file_object.close()
 
             # variable to store the info of the best layer found in this iteration
@@ -512,12 +514,12 @@ class NetAdaptPruner(Pruner):
 
                 target_op_sparsity = 0.5 + pruning_times[wrapper_idx] * (1/32)
                 pruning_times[wrapper_idx] += 1
-                if wrapper_idx < 5 and pruning_times[wrapper_idx] % 2 != 1:
-                    print('Not pruning 2 channels')
-                    file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('NOT pruning 2 channels: ' + wrapper.name + '\n')
-                    file_object.close()
-                    continue
+#                if wrapper_idx < 5 and pruning_times[wrapper_idx] % 2 != 1:
+#                    print('Not pruning 2 channels')
+#                    file_object = open('./record_tvm.txt', 'a')
+#                    file_object.write('NOT pruning 2 channels: ' + wrapper.name + '\n')
+#                    file_object.close()
+#                    continue
 
                 if target_op_sparsity >= 0.97:
                     print('Improper Layer')
@@ -533,7 +535,7 @@ class NetAdaptPruner(Pruner):
 
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
-                model = ResNet50().to(device)
+                model = ResNet18().to(device)
 #                model = VGG(depth=self._num).to(device)
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
@@ -602,17 +604,28 @@ class NetAdaptPruner(Pruner):
 #                ctx = remote.cl()
                 module = graph_executor.GraphModule(rlib["default"](ctx))
 
-                temp_latency = self._test3(module, input_name, ctx, "TVM_initial")
+#                temp_latency = self._test3(module, input_name, ctx, "TVM_initial")
+                data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
+                module.set_input(input_name, data_tvm)
+                ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)#, min_repeat_ms=500)
+                prof_res = np.array(ftimer().results) * 1e3 
+                temp_latency = np.mean(prof_res)
+                print('ftimer_latency: ' + str(temp_latency))
+
+                tune_trials_prev = tune_trials
+                tune_trials = tune_trials + 100 if total_estimated_latency > temp_latency*1.25 else tune_trials
+                tune_trials = tune_trials - 100 if total_estimated_latency < temp_latency*0.8 else tune_trials
+                tune_trials = 200 if tune_trials < 200 else tune_trials
                 #################################################
-                print('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}'.format(wrapper.name, temp_latency, ch_num))
+                print('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object = open('./record_tvm.txt', 'a')
-                file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
+                file_object.write('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object.close()
                 file_object = open('./shape.txt', 'a')
-                file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
+                file_object.write('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object.close()
                 ################# Added part to prune the slow layer quickly ##################
-                if temp_latency > 1.05 * target_latency:
+                if temp_latency > 1.05 * target_latency and tune_trials <= tune_trials_prev:
                     file_object = open('./record_tvm.txt', 'a')
                     file_object.write('Too long latency! Pruning_ratio of Layer {} increases one time more!\n'.format(wrapper.name))
                     pruning_times[wrapper_idx] += 1
@@ -714,8 +727,8 @@ class NetAdaptPruner(Pruner):
                             setattr(wrapper, k, best_op['masks'][k])
                         break
 
-                ## Training 100 epochs ##
-                test_model = ResNet50().to(device)
+                ## Training 20 epochs ##
+                test_model = ResNet18().to(device)
 #                test_model = VGG(depth=16).to(device)
                 test_model.load_state_dict(torch.load(self._tmp_model_path))
                 test_masks_file = './tmp_mask.pth'
@@ -725,9 +738,10 @@ class NetAdaptPruner(Pruner):
                 print('Evaluation result (speed up model): %s' % evaluation_result)
                 _, _, _ = count_flops_params(test_model, (1, 3, 32, 32))
                 optimizer = torch.optim.SGD(test_model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-                scheduler = MultiStepLR(optimizer, milestones=[50, 75], gamma=0.1)
+#                scheduler = MultiStepLR(optimizer, milestones=[50, 75], gamma=0.1)
+                scheduler = MultiStepLR(optimizer, milestones=[5, 10], gamma=0.1)
                 best_acc = 0
-                for epoch in range(100):
+                for epoch in range(20):
                     self._short_term_fine_tuner(test_model, optimizer, epochs=epoch)
                     scheduler.step()
                     acc = self._evaluator(test_model)
