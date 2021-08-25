@@ -219,6 +219,7 @@ class TaskScheduler:
         callbacks=None,
     ):
         self.tasks = tasks
+        self.task_weights = task_weights
         if objective_func:  # use custom objective function
             self.objective_func = objective_func
         else:  # use weighted sum
@@ -241,7 +242,7 @@ class TaskScheduler:
         )
 
         assert len(self.tasks) != 0, "No tasks"
-        assert self.strategy in ["round-robin", "gradient"]
+        assert self.strategy in ["round-robin", "gradient", "longest"]
 
         # task_cts[i] saves how many times task i is tuned
         self.task_cts = [0 for _ in range(len(self.tasks))]
@@ -328,7 +329,7 @@ class TaskScheduler:
 #        self.num_measures_per_round = min(
 #            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
 #        )
-        self.num_measures_per_round = 1
+        self.num_measures_per_round = 5
         if self.num_measures_per_round <= 0:
             raise ValueError(
                 "num_measure_trials is too small. Please set it to a higher value."
@@ -365,12 +366,48 @@ class TaskScheduler:
         )
 
         # use the specific strategy to choose workload to tune
-        task_idx = -1
+        task_idx = -1        
+        prev_task_idx = -1
+        prev_max_val = 0
+        repeated_times = 0
+        avoid_tasks = [0 for i in range(len(self.tasks))]
         while self.ct < tune_option.num_measure_trials and len(self.dead_tasks) < len(self.tasks):
             if self.strategy == "round-robin":
                 task_idx = (task_idx + 1) % len(self.tasks)
                 while task_idx in self.dead_tasks:
                     task_idx = (task_idx + 1) % len(self.tasks)
+            ################### Taeho's addition ####################
+            elif self.strategy == "longest":
+                max_val = 0
+                for i in range(len(self.tasks)):
+                    if avoid_tasks[i] == 1:
+                        continue
+                    if i in self.dead_tasks:
+                        continue
+                    if self.best_costs[i]*self.task_weights[i] > max_val:
+                        max_val = self.best_costs[i]*self.task_weights[i]
+                        task_idx = i
+                if task_idx == prev_task_idx and prev_max_val - max_val < 0.0001:
+                    repeated_times += 1
+                    if repeated_times > 1:
+                        avoid_tasks[task_idx] = 1
+                        max_val = 0
+                        for i in range(len(self.tasks)):
+                            if avoid_tasks[i] == 1:
+                                continue
+                            if i in self.dead_tasks:
+                                continue
+                            if self.best_costs[i]*self.task_weights[i] > max_val:
+                                max_val = self.best_costs[i]*self.task_weights[i]
+                                task_idx = i
+                        prev_task_idx = task_idx
+                        prev_max_val = max_val
+                        repeated_times = 0
+                else:
+                    prev_task_idx = task_idx
+                    prev_max_val = max_val
+                    repeated_times = 0
+            #########################################################
             elif self.strategy == "gradient":
                 gradients = []
                 for i in range(len(self.tasks)):
@@ -605,9 +642,9 @@ class PrintTableInfo(TaskSchedulerCallback):
             )
 #            trials_str = "%d" % (task_scheduler.task_cts[i] * task_scheduler.num_measures_per_round)
             if task_scheduler.task_cts[i] <= 1:
-                trials_str = "%d" % (task_scheduler.task_cts[i])
+                trials_str = "%d" % (task_scheduler.task_cts[i] * 5)
             else:
-                trials_str = "%d" % (1 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
+                trials_str = "%d" % (5 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
             print("| %4s | %12s | % 14s | %6s |" % (id_str, latency_str, speed_str, trials_str))
             if task_scheduler.ct >= len(task_scheduler.tasks):
                 file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
