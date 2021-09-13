@@ -33,6 +33,9 @@ from .constants_pruner import PRUNER_DICT
 
 ################### TVM build part addition ###############
 from pruned_vgg_maxpool import VGG 
+from models.cifar10.resnet import ResNet18, ResNet50
+import torchvision.models as models
+import torch.utils.model_zoo as model_zoo
 import _pickle as cPickle
 import time
 import torch.onnx
@@ -126,7 +129,7 @@ class NetAdaptPruner(Pruner):
         including the config_list generated for the base pruning algorithm and the performance of the pruned model.
     """
 
-    def __init__(self, model, config_list, short_term_fine_tuner, evaluator, val_loader, num, dummy_input, criterion,
+    def __init__(self, model, config_list, short_term_fine_tuner, evaluator, val_loader, dummy_input, criterion,
                  optimize_mode='maximize', base_algo='l1', sparsity_per_iteration=0.01, experiment_data_dir='./'):
         # models used for iterative pruning and evaluation
         self._model_to_prune = copy.deepcopy(model)
@@ -155,7 +158,6 @@ class NetAdaptPruner(Pruner):
         self._tmp_model_path = './tmp_model.pth'
 
         # addition
-        self._num = num
         self._val_loader = val_loader
         self._criterion = criterion
         self._dummy_input = dummy_input
@@ -291,35 +293,19 @@ class NetAdaptPruner(Pruner):
             model with specified modules compressed.
         """
         _logger.info('Starting NetAdapt Compression...')
-        from PIL import Image
-        from tvm.contrib.download import download_testdata
-        img_url = "https://github.com/dmlc/mxnet.js/blob/main/data/cat.png?raw=true"
-        img_path = download_testdata(img_url, "cat.png", module="data")
-        img = Image.open(img_path).resize((32, 32))
-        from torchvision import transforms
-        my_preprocess = transforms.Compose(
-            [
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomCrop(32, 4),
-                transforms.ToTensor(),   
-                transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]),
-            ]
-        )
-        img = my_preprocess(img)
-        img = np.expand_dims(img, 0)
 
         device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
         arch = "arm64"
-        target = "llvm -mtriple=aarch64-linux-android"        
-################# Autotune added
+        target = "llvm -mtriple=%s-linux-android" % arch        
+        
         network = "vgg"
         device_key = "android"
         log_file = "%s.%s.log" % (device_key, network)
         dtype = "float32"
         use_android = True
-################################
         self._model_to_prune.eval()
-        _, _, temp_results = count_flops_params(self._model_to_prune, (1, 3, 32, 32))
+        #_, _, temp_results = count_flops_params(self._model_to_prune, (1, 3, 32, 32))
+        _, _, temp_results = count_flops_params(self._model_to_prune, (1, 3, 224, 224))
         conv2d_num = 0
         others_num = 0
         for idx in range(len(temp_results)):
@@ -333,13 +319,17 @@ class NetAdaptPruner(Pruner):
             if temp_results[idx].get('module_type') == 'Conv2d':
                 conv2d_layer_chs[temp_idx] = temp_results[idx].get('weight_shape')[0]
                 temp_idx += 1
+        print("=========== conv2d_num+, chs ============")
+        print(conv2d_num)
+        print(conv2d_layer_chs)
 
-        input_shape = [1, 3, 32, 32]
+        input_shape = [1, 3, 224, 224] #[1, 3, 32, 32]
         output_shape = [1, 10]
         input_data = torch.randn(input_shape).to(device)
+        ######################################################################
         scripted_model = torch.jit.trace(self._model_to_prune, input_data).eval()
         input_name = "input0"
-        shape_list = [(input_name, img.shape)]
+        shape_list = [(input_name, input_shape)]
         mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
         ########### NCHW -> NHWC ############
         desired_layouts = {'nn.conv2d': ['NHWC', 'default'], 'nn.dense': ['NHWC', 'default']}
@@ -352,12 +342,12 @@ class NetAdaptPruner(Pruner):
             mod = seq(mod)
         #####################################
         tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
-        tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9191))
+        tracker_port = int(os.environ["TVM_TRACKER_PORT"]) #int(os.environ.get("TVM_TRACKER_PORT", 9191))
 
         #################### Extract search tasks ###################
         print("Extract tasks...")
-#        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
-        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
+#        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
+        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
 
         layer_tasks = [-1 for i in range(conv2d_num)]
         task_times = [-1 for i in range(conv2d_num)]
@@ -371,92 +361,106 @@ class NetAdaptPruner(Pruner):
                 layer_tasks[pos] = idx
                 pos -= 1
 
-        init_resource_reduction_ratio = 0.025 # 0.05 
         resource_reduction_decay = 0.96 #0.98
         max_iter = 100
         pass_target_latency = 0
-        prev_short_acc = 0
+        alpha = 0.99 # target_latency
+        beta = 0.95  # prev_acc
+        init_short_acc = 0
         performance = 0
-        intermediate = 0
+        intermediate = 1
         pruning_times = [0 for i in range(conv2d_num)]
-
+        at_least_trials = 10
+        num_per_round = 60
+        print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))
+        tune_trials = (at_least_trials + num_per_round) * (conv2d_num + others_num)
+        tune_trials = tune_trials if tune_trials > 2000 else 2000
+        
         if intermediate == 1:
-            task_times_rank = np.array([-1, -1, 8, 7, 3, 5, 4, 6, 2, 11, 10, 12, 0])
-            tune_trials = 1500
+            #### Need to be changed ####
+            task_times_rank = np.array([8, 7, 9, 6, 5, 4, 34, 35, 33, 32, 31, 3, 30, 27, 26, 29, 28, 24, 25, 19, 20, 22, 23, 21, 14, 13, 12, 18, 17, 15, 16, 11, 10, 2, 0, 1])
+            current_latency = 84.5171
+            current_accuracy = 0.7312 # the accuracy from the recent 20 trial fine-tune
+            current_accuracy_5 = 0.91366
+            total_estimated_latency = 104.3329
+            init_short_acc = 0.90534
+            initial_latency = 107.3350
+            #### Fixed val ####
+            target_latency = current_latency * alpha
             pruning_iteration = 0
-            current_latency = 15.1229
-            current_accuracy = 0.9323
-            target_latency = 5.0702
-            total_estimated_latency = 7.8306
-            budget = 0.1 * current_latency
-            init_resource_reduction = init_resource_reduction_ratio * current_latency
+            budget = 0.1 * initial_latency
         else:
             #################### Tuning #####################
             print("Begin tuning...")
-            tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="longest")
-
-            tune_trials = 400
+            tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="longest")        
             tune_option = auto_scheduler.TuningOptions(
                 num_measure_trials=tune_trials,
                 builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
                 runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=100000, number=10, repeat=2,),
                 measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
-                verbose=1,
-                early_stopping=200,
-                num_measures_per_round=20,
+	        verbose=1,
+                #early_stopping=300,
+                num_measures_per_round = num_per_round,
             )
-            tuner.tune(tune_option)
+            tuner.tune(tune_option)        
             total_estimated_latency = 0
             for i in range(conv2d_num):
-                task_times[i] = tuner.best_costs[layer_tasks[i]] * task_weights[layer_tasks[i]]
+                task_times[i] = tuner.best_costs[layer_tasks[i]]# * task_weights[layer_tasks[i]]
                 total_estimated_latency += tuner.best_costs[layer_tasks[i]] * 1000
             task_times_rank = np.argsort(task_times)
             task_times_rank = np.flip(task_times_rank)
-            file_object = open('./printTable.txt', 'a')
-            file_object.write('=============== task_times =================\n')
+            file_object = open('./record_tvm.txt', 'a')
+            file_object.write('=============== task_times ===============\n')
             file_object.write(str(task_times))
             file_object.write('\n')
             file_object.write(str(task_times_rank))
+            file_object.write('\n')
+            file_object.write(str(np.argsort(task_times_rank) + 1))
             file_object.write('\n\n')
             file_object.close()
+#            print("=========== layer_tasks, task_times, task_times_rank, conv2d_layer_chs ==============")
+#            print(layer_tasks)
+#            print(task_times)
+#            print(task_times_rank)
+#            print(conv2d_layer_chs)
+        
             #################### Compile ####################
             print("Compile...")
             with auto_scheduler.ApplyHistoryBest(log_file):
                 with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
-#                    lib = relay.build_module.build(mod, params=params, target=target)
-                    lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
+                    lib = relay.build_module.build(mod, params=params, target=target)
+                    # lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
             
             tmp = utils.tempdir()
             lib_fname = tmp.relpath("net.so")
             lib.export_library(lib_fname, ndk.create_shared)
-            remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=10000)
+            remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=200)            
             remote.upload(lib_fname)
             rlib = remote.load_module("net.so")
 
             # Create graph executor
-#            ctx = remote.cpu()
-            ctx = remote.cl()
+            ctx = remote.cpu()
+            # ctx = remote.cl(0)
             module = graph_executor.GraphModule(rlib["default"](ctx))
 
             data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
             module.set_input(input_name, data_tvm)
-            ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)#, min_repeat_ms=500)
+            ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)
             prof_res = np.array(ftimer().results) * 1e3
             current_latency = np.mean(prof_res)
             print('ftimer_latency: ' + str(current_latency))
             #################################################
+        
             pruning_iteration = 1
-
             budget = 0.1 * current_latency
-            init_resource_reduction = init_resource_reduction_ratio * current_latency
             print('Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}'.format(current_latency, total_estimated_latency))
             file_object = open('./record_tvm.txt', 'a')
             file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}\n'.format(budget, current_latency, total_estimated_latency))
             file_object.close()
-            current_accuracy = self._evaluator(self._model_to_prune)
-            target_latency = current_latency - init_resource_reduction * (resource_reduction_decay ** (pruning_iteration - 1))
-            tune_trials = tune_trials + 100 if total_estimated_latency > current_latency*1.25 else tune_trials
-            tune_trials = tune_trials - 100 if total_estimated_latency < current_latency*0.8 else tune_trials 
+            accuracy, accuracy_5 = self._evaluator(self._model_to_prune)
+            current_accuracy = accuracy
+            current_accuracy_5 = accuracy_5
+            target_latency = current_latency * alpha
 
         # stop condition
         while pruning_iteration < max_iter and current_latency > budget:
@@ -464,34 +468,31 @@ class NetAdaptPruner(Pruner):
             best_idx = -1
 
             # calculate target sparsity of this iteration
-#            target_sparsity = current_sparsity + self._sparsity_per_iteration
             if pass_target_latency == 1:
-                target_latency = current_latency - init_resource_reduction * (resource_reduction_decay ** (pruning_iteration - 1))
+                target_latency = current_latency * alpha
                 pass_target_latency = 0
 
             # Print the message
             print('=======================')
-            print(('Process iteration {:>3}: current_accuracy = {:>8.4f}, '
-                    'current_latency = {:>8.4f}, target_latency = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_latency, target_latency, total_estimated_latency, tune_trials))
+            print(('Process iteration {:>3}: current_accuracy = {:>8.4f}, {:>8.4f}, '
+                    'current_latency = {:>8.4f}, target_latency = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_accuracy_5, current_latency, target_latency, total_estimated_latency, tune_trials))
             file_object = open('./record_tvm.txt', 'a')            
-            file_object.write(('Process iteration {:>3}: current_accuracy = {:>8.4f}, '
-                   'current_latency = {:>8.4f}, target_latency = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_latency, target_latency, total_estimated_latency, tune_trials))
+            file_object.write(('Process iteration {:>3}: current_accuracy = {:>8.4f}, {:>8.4f}, '
+                   'current_latency = {:>8.4f}, target_resource = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_accuracy_5, current_latency, target_latency, total_estimated_latency, tune_trials))
             file_object.write('Current pruning_times: ' + str(pruning_times) + '\n')
             file_object.close()
 
             # variable to store the info of the best layer found in this iteration
             best_op = {}
-
-#            for wrapper in self.get_modules_wrapper():
+            
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
-                # Current model state
-                pruning_times = [-1, -1, -1, -1, 0, 0, -1, 0, 0, 0, -1, 0, 0]
+                pruning_times = [-1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
                     if pruning_times[layer_idx] > -1:
                         target_op_sparsity = 0.5 + pruning_times[layer_idx] * (1/32)
-                        self._config_list_generated = self._update_config_list( 
+                        self._config_list_generated = self._update_config_list(
                             self._config_list_generated, wrapper.name, target_op_sparsity)
                         pruner = PRUNER_DICT[self._base_algo](copy.deepcopy(self._model_to_prune), self._config_list_generated)
                         model_masked = pruner.compress()
@@ -504,10 +505,10 @@ class NetAdaptPruner(Pruner):
                         for k in masks:
                             setattr(wrapper, k, masks[k])
                     layer_idx += 1
-                # Real pruning_times value
-                pruning_times = [0, 2, 0, 0, 1, 1, 1, 1, 2, 2, 0, 2, 3]
-                pruning_iteration = 8
+                pruning_times = [0, 0, 0, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                pruning_iteration = 2
             ######################################################################
+            
             for wrapper_idx in task_times_rank:
                 if wrapper_idx == -1:
                     continue
@@ -515,12 +516,6 @@ class NetAdaptPruner(Pruner):
                 wrapper = self.get_modules_wrapper()[wrapper_idx]
                 target_op_sparsity = 0.5 + pruning_times[wrapper_idx] * (1/32)
                 pruning_times[wrapper_idx] += 1
-#                if wrapper_idx < 2 and pruning_times[wrapper_idx] % 2 == 0:
-#                    print('Not pruning 2 channels')
-#                    file_object = open('./record_tvm.txt', 'a')
-#                    file_object.write('NOT pruning 2 channels: ' + wrapper.name + '\n')
-#                    file_object.close()
-#                    continue
 
                 if target_op_sparsity >= 0.97:
                     print('Improper Layer')
@@ -536,21 +531,22 @@ class NetAdaptPruner(Pruner):
 
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
-                model = VGG(depth=self._num).to(device)
+                # model = ResNet50().to(device) # VGG(depth=self._num).to(device)
+                model = models.resnet34().to(device)
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
                 m_speedup = ModelSpeedup(model, self._dummy_input, masks_file, device)
                 m_speedup.speedup_model()
                 # added 1: Autotune + TVM build
                 model.eval()
-                _, _, _ = count_flops_params(model, (1, 3, 32, 32))
-                input_shape = [1, 3, 32, 32]
+                # _, _, _ = count_flops_params(model, (1, 3, 32, 32))
+                _, _, _ = count_flops_params(model, (1, 3, 224, 224))
+                input_shape = [1, 3, 224, 224] #[1, 3, 32, 32]
                 output_shape = [1, 10]
                 input_data = torch.randn(input_shape).to(device)
-#                scripted_model = torch.jit.trace(self._model_to_prune, input_data).eval()
                 scripted_model = torch.jit.trace(model, input_data).eval()
                 input_name = "input0"
-                shape_list = [(input_name, img.shape)]
+                shape_list = [(input_name, input_shape)]
                 mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
                 ########### NCHW -> NHWC ############
                 desired_layouts = {'nn.conv2d': ['NHWC', 'default'], 'nn.dense': ['NHWC', 'default']} # added
@@ -558,13 +554,10 @@ class NetAdaptPruner(Pruner):
                                       relay.transform.ConvertLayout(desired_layouts)])
                 with tvm.transform.PassContext(opt_level=3):
                     mod = seq(mod)
-                #####################################
-                tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
-                tracker_port = int(os.environ.get("TVM_TRACKER_PORT", 9190))
                 #################### Extract search tasks ###################
                 print("Extract tasks...")
-                tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
-#                tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+                tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+                # tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
                 layer_tasks_temp = [-1 for i in range(conv2d_num)]
                 task_times_temp = [-1 for i in range(conv2d_num)]
                 pos = conv2d_num - 1
@@ -584,13 +577,13 @@ class NetAdaptPruner(Pruner):
                     builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
                     runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=100000, number=10, repeat=2,),
                     measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
-                    num_measures_per_round=20,
-                    early_stopping=200,
+                    #early_stopping=300,
+                    num_measures_per_round = num_per_round,
                 )
                 tuner.tune(tune_option)
                 total_estimated_latency = 0
                 for i in range(conv2d_num):
-                    task_times_temp[i] = tuner.best_costs[layer_tasks_temp[i]] * task_weights[layer_tasks_temp[i]]
+                    task_times_temp[i] = tuner.best_costs[layer_tasks_temp[i]]# * task_weights[layer_tasks_temp[i]]
                     total_estimated_latency += tuner.best_costs[layer_tasks_temp[i]] * 1000
                 task_times_rank_temp = np.argsort(task_times_temp)
                 task_times_rank_temp = np.flip(task_times_rank_temp)
@@ -598,45 +591,41 @@ class NetAdaptPruner(Pruner):
                 print("Compile...")
                 with auto_scheduler.ApplyHistoryBest(log_file):
                     with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
-                        lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
-#                        lib = relay.build(mod, target=target, params=params)
-          
+                        # lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
+                        lib = relay.build(mod, target=target, params=params)
+         
                 tmp = utils.tempdir()
                 lib_fname = tmp.relpath("net.so")
                 lib.export_library(lib_fname, ndk.create_shared)
-                remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=10000)
+                remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=200)
                 remote.upload(lib_fname)
                 rlib = remote.load_module("net.so")
-#                ctx = remote.cpu()
-                ctx = remote.cl()
+                ctx = remote.cpu()
+                # ctx = remote.cl()
                 module = graph_executor.GraphModule(rlib["default"](ctx))
 
-#                temp_latency = self._test3(module, input_name, ctx, "TVM_initial")
                 data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
                 module.set_input(input_name, data_tvm)
                 ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)#, min_repeat_ms=500)
                 prof_res = np.array(ftimer().results) * 1e3
                 temp_latency = np.mean(prof_res)
                 print('ftimer_latency: ' + str(temp_latency))
-                tune_trials_prev = tune_trials
-                tune_trials = tune_trials + 100 if total_estimated_latency > temp_latency*1.25 else tune_trials
-                tune_trials = tune_trials - 100 if total_estimated_latency < temp_latency*0.8 else tune_trials
-                tune_trials = 200 if tune_trials < 200 else tune_trials
+
                 #################################################
-                print('Layer: {}, Temp latency: {:>8.4f}, Total estimated latenc: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
+                print('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object = open('./record_tvm.txt', 'a')
                 file_object.write('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object.close()
                 file_object = open('./shape.txt', 'a')
                 file_object.write('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object.close()
-                ################## Added part to prune the slow layer quickly #################
-                if temp_latency > 1.05 * target_latency and tune_trials <= tune_trials_prev:
+                ################# Added part to prune the slow layer quickly ##################
+                if temp_latency > target_latency:# and tune_trials <= tune_trials_prev:
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Too long latency! Pruning_ratio of Layer {} increases one time more!\n'.format(wrapper.name))
+                    file_object.write('Higher than target latency! Pruning_ratio of Layer {} increases one time more!\n'.format(wrapper.name))
                     pruning_times[wrapper_idx] += 1
-                    if temp_latency > 1.2 * target_latency:
-                        file_object.write('1.2x long latency: Pruning_ratio increases one time more!\n')
+                    if temp_latency > (1.0 / alpha) * target_latency:
+                        file_object.write('Higher than existing latency! Pruning_ratio increases one time more!\n')
                         pruning_times[wrapper_idx] += 1
                     file_object.close()
                 ###############################################################################
@@ -646,31 +635,42 @@ class NetAdaptPruner(Pruner):
                     file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
                     file_object.close()
                     # Short-term fine tune the pruned model
-                    optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-                    performance = 0
-                    for trial in range(5):
-                        self._short_term_fine_tuner(model_masked, optimizer, epochs=trial) #2
-                        acc = self._evaluator(model_masked)
-                        if acc > performance:
-                            performance = acc
-#                    performance = self._evaluator(model_masked)
-                    print('Layer: {}, Evaluation result after short-term fine tuning: {:>8.4f}'.format(wrapper.name, performance))
+                    optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
+                    self._short_term_fine_tuner(model_masked, optimizer, epochs=0)
+                    best_acc, best_acc_5 = self._evaluator(model_masked)                        
+#                    best_acc = 0
+#                    best_acc_5 = 0
+#                    for trial in range(5):
+#                        self._short_term_fine_tuner(model_masked, optimizer, epochs=trial) #2
+#                        acc, acc_5 = self._evaluator(model_masked)
+#                        if acc_5 > best_acc_5:
+#                            best_acc_5 = acc_5
+#                        if acc > best_acc:
+#                            best_acc = acc
+                    print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}'.format(wrapper.name, best_acc, best_acc_5))
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Layer: {}, Accuracy: {:>8.4f}\n'.format(wrapper.name, performance))
+                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}\n'.format(wrapper.name, best_acc, best_acc_5))
                     file_object.close()
                     file_object = open('./train_epoch.txt', 'a')
-                    file_object.write('Layer: {}, Accuracy: {:>8.4f}\n'.format(wrapper.name, performance))
+                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}\n'.format(wrapper.name, best_acc, best_acc_5))
                     file_object.close()
-                    ########### Added part to avoid excessive accuracy decrement ##########
-                    if prev_short_acc != 0:
-                        if performance < 0.95 * prev_short_acc:
+                    ################ Added part to avoid excessive accuracy decrement ###############
+                    if init_short_acc == 0:
+                        if best_acc_5 < 0.1:
                             file_object = open('./record_tvm.txt', 'a')
-                            file_object.write('Too low short-term accuracy: Improper layer: {}\n'.format(wrapper.name))
+                            file_object.write('Too low short-term accuracy! Improper layer: {}\n'.format(wrapper.name))
+                            file_object.close()
+                            pruning_times[wrapper_idx] = 100
+                            continue                            
+                        init_short_acc = best_acc_5
+                    else:
+                        if best_acc_5 < beta * init_short_acc:
+                            file_object = open('./record_tvm.txt', 'a')
+                            file_object.write('Too low short-term accuracy! Improper layer: {}\n'.format(wrapper.name))
                             file_object.close()
                             pruning_times[wrapper_idx] = 100
                             continue
-                    prev_short_acc = performance
-                    #######################################################################
+                    #################################################################################
 
                     _logger.debug("updating best layer to %s...", wrapper.name)
                     best_idx = wrapper_idx
@@ -686,7 +686,7 @@ class NetAdaptPruner(Pruner):
                         'sparsity': target_op_sparsity,
                         'ch_num': ch_num,
                         'latency': temp_latency,
-                        'performance': performance,
+                        'performance': best_acc_5,
                         'masks': masks
                     }
 
@@ -698,14 +698,16 @@ class NetAdaptPruner(Pruner):
                     layer_tasks = layer_tasks_temp
                     task_times = task_times_temp
                     task_times_rank = task_times_rank_temp
-                    file_object = open('./printTable.txt', 'a')
-                    file_object.write('=============== task_times ==================\n')
+                    file_object = open('./record_tvm.txt', 'a')
+                    file_object.write('=============== task_times ===============\n')
                     file_object.write(str(task_times))
                     file_object.write('\n')
                     file_object.write(str(task_times_rank))
+                    file_object.write('\n')
+                    file_object.write(str(np.argsort(task_times_rank) + 1))
                     file_object.write('\n\n')
                     file_object.close()
-                    break 
+                    break
 
 #            if not best_op:
 #                # decrease pruning step
@@ -715,7 +717,6 @@ class NetAdaptPruner(Pruner):
 #                continue
 
             if pass_target_latency == 1:
-#                pruning_times[best_idx] += 1
                 # Pick the best layer to prune, update iterative information
                 # update config_list
                 self._config_list_generated = self._update_config_list(
@@ -734,28 +735,36 @@ class NetAdaptPruner(Pruner):
                             setattr(wrapper, k, best_op['masks'][k])
                         break
 
-                ## Training 100 epochs ##
-                test_model = VGG(depth=16).to(device)
+                '''
+                ## Training 20 epochs ##
+                #test_model = ResNet50().to(device) #VGG(depth=16).to(device)
+                test_model = models.resnet34().to(device)
                 test_model.load_state_dict(torch.load(self._tmp_model_path))
                 test_masks_file = './tmp_mask.pth'
                 m_speedup = ModelSpeedup(test_model, self._dummy_input, test_masks_file, device)
                 m_speedup.speedup_model()
-                evaluation_result = self._evaluator(test_model)
-                print('Evaluation result (speed up model): %s' % evaluation_result)
-                _, _, _ = count_flops_params(test_model, (1, 3, 32, 32))
-                optimizer = torch.optim.SGD(test_model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+#                accuracy, accuracy_5 = self._evaluator(test_model)
+#                print('Evaluation result (speed up model): %s, %s' %(accuracy, accuracy_5))
+                # _, _, _ = count_flops_params(test_model, (1, 3, 32, 32))
+                _, _, _ = count_flops_params(test_model, (1, 3, 224, 224))
+                optimizer = torch.optim.SGD(test_model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
 #                scheduler = MultiStepLR(optimizer, milestones=[50, 75], gamma=0.1)
                 scheduler = MultiStepLR(optimizer, milestones=[5, 10], gamma=0.1)
                 best_acc = 0
-                for epoch in range(20): #
+                best_acc_5 = 0
+                for epoch in range(20):  #100
                     self._short_term_fine_tuner(test_model, optimizer, epochs=epoch)
                     scheduler.step()
-                    acc = self._evaluator(test_model)
+                    acc, acc_5 = self._evaluator(test_model)
+                    if acc_5 > best_acc_5:
+                        best_acc_5 = acc_5
                     if acc > best_acc:
                         best_acc = acc
+                '''
                 current_accuracy = best_acc
-                print('Fine tuned accuracy: %s' % best_acc)
-                file_object.write('Fine tuned accuracy: %s\n' % best_acc)
+                current_accuracy_5 = best_acc_5
+#                print('Fine tuned accuracy: %s %s' % (best_acc, best_acc_5))
+#                file_object.write('Fine tuned accuracy: %s %s\n' %(best_acc, best_acc_5))
                 #########################
                 file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
                 file_object.close()
@@ -770,17 +779,17 @@ class NetAdaptPruner(Pruner):
 #        os.remove(self._tmp_model_path)
 
         _logger.info('----------Compression finished--------------')
-        _logger.info('config_list generated: %s', self._config_list_generated)
-        _logger.info("Performance after pruning: %s", self._final_performance)
+#        _logger.info('config_list generated: %s', self._config_list_generated)
+#        _logger.info("Performance after pruning: %s", self._final_performance)
 #        _logger.info("Masked sparsity: %.6f", current_sparsity)
 
-        # save best config found and best performance
-        with open(os.path.join(self._experiment_data_dir, 'search_result.json'), 'w') as jsonfile:
-            json.dump({
-                'performance': self._final_performance,
-                'config_list': json.dumps(self._config_list_generated)
-            }, jsonfile)
+#        # save best config found and best performance
+#        with open(os.path.join(self._experiment_data_dir, 'search_result.json'), 'w') as jsonfile:
+#            json.dump({
+#                'performance': self._final_performance,
+#                'config_list': json.dumps(self._config_list_generated)
+#            }, jsonfile)
 
-        _logger.info('search history and result saved to foler : %s', self._experiment_data_dir)
+#        _logger.info('search history and result saved to foler : %s', self._experiment_data_dir)
 
         return self.bound_model

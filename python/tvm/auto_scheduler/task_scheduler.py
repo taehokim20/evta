@@ -329,7 +329,7 @@ class TaskScheduler:
 #        self.num_measures_per_round = min(
 #            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
 #        )
-        self.num_measures_per_round = 5
+        self.num_measures_per_round = 10 #1
         if self.num_measures_per_round <= 0:
             raise ValueError(
                 "num_measure_trials is too small. Please set it to a higher value."
@@ -353,7 +353,7 @@ class TaskScheduler:
         )
 
         # do a round robin first to warm up
-        for idx in range(len(self.tasks)):
+        for idx in range(len(self.tasks)): #range(1):
             # skip warming up this task if it has been tuned before (restored from the log file)
             if not self.task_cts[idx]:
                 self._tune_task(idx)
@@ -369,7 +369,7 @@ class TaskScheduler:
         task_idx = -1        
         prev_task_idx = -1
         prev_max_val = 0
-        repeated_times = 0
+#        repeated_times = 0
         avoid_tasks = [0 for i in range(len(self.tasks))]
         while self.ct < tune_option.num_measure_trials and len(self.dead_tasks) < len(self.tasks):
             if self.strategy == "round-robin":
@@ -387,9 +387,11 @@ class TaskScheduler:
                     if self.best_costs[i]*self.task_weights[i] > max_val:
                         max_val = self.best_costs[i]*self.task_weights[i]
                         task_idx = i
-                if task_idx == prev_task_idx and prev_max_val - max_val < 0.0001:
-                    repeated_times += 1
-                    if repeated_times > 1:
+#                self.tasks[i].compute_dag.flop_ct / self_scheduler.best_costs[i] / 1e9)
+                if task_idx == prev_task_idx and prev_max_val - max_val < 0.00001: #0.0001:
+#                    repeated_times += 1
+#                    if repeated_times > 1:
+                    if self.best_costs[task_idx] < 0.01 or avoid_tasks[task_idx] == 2:
                         avoid_tasks[task_idx] = 1
                         max_val = 0
                         for i in range(len(self.tasks)):
@@ -402,11 +404,13 @@ class TaskScheduler:
                                 task_idx = i
                         prev_task_idx = task_idx
                         prev_max_val = max_val
-                        repeated_times = 0
+#                    repeated_times = 0
+                    else:
+                        avoid_tasks[task_idx] = 2
                 else:
                     prev_task_idx = task_idx
                     prev_max_val = max_val
-                    repeated_times = 0
+#                    repeated_times = 0
             #########################################################
             elif self.strategy == "gradient":
                 gradients = []
@@ -470,6 +474,7 @@ class TaskScheduler:
             else:
                 raise ValueError("Invalid strategy: " + self.strategy)
 
+            print("tune_trials: " + str(self.tune_option.num_measure_trials))
             self._tune_task(task_idx)
             self._adjust_similarity_group(task_idx)
 
@@ -485,6 +490,10 @@ class TaskScheduler:
                         + str(self.early_stopping_all)
                         + " measurement trials."
                     )
+                break
+            elif all(avoid > 0 for avoid in avoid_tasks):
+                if self.tune_option.verbose >= 1:
+                    print("All tasks finished tuning")
                 break
 
     def _tune_task(self, task_idx):
@@ -622,7 +631,7 @@ class PrintTableInfo(TaskSchedulerCallback):
         file_object = open('./printTable.txt', 'a')
         print("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |")
         print("-------------------------------------------------")
-        if task_scheduler.ct >= len(task_scheduler.tasks):
+        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
             file_object.write("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |\n")
             file_object.write("-------------------------------------------------\n")
 
@@ -642,15 +651,15 @@ class PrintTableInfo(TaskSchedulerCallback):
             )
 #            trials_str = "%d" % (task_scheduler.task_cts[i] * task_scheduler.num_measures_per_round)
             if task_scheduler.task_cts[i] <= 1:
-                trials_str = "%d" % (task_scheduler.task_cts[i] * 5)
+                trials_str = "%d" % (task_scheduler.task_cts[i] * 10)
             else:
-                trials_str = "%d" % (5 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
+                trials_str = "%d" % (10 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
             print("| %4s | %12s | % 14s | %6s |" % (id_str, latency_str, speed_str, trials_str))
-            if task_scheduler.ct >= len(task_scheduler.tasks):
+            if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
                 file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
                 
         print("-------------------------------------------------")        
-        if task_scheduler.ct >= len(task_scheduler.tasks):            
+        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:            
             file_object.write("-------------------------------------------------\n")
 
         # overall info
@@ -667,7 +676,7 @@ class PrintTableInfo(TaskSchedulerCallback):
                 task_id,
             )
         )
-        if task_scheduler.ct >= len(task_scheduler.tasks):            
+        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
             file_object.write("Estimated total latency: %s ms\tTrials: %d\tUsed time : %.0f s\tNext ID: %d\t\n"
             % (total_latency_str, task_scheduler.ct, time.time() - task_scheduler.tic, task_id,))
         file_object.close()
