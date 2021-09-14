@@ -368,8 +368,9 @@ class NetAdaptPruner(Pruner):
         beta = 0.95  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 1
+        intermediate = 0
         pruning_times = [0 for i in range(conv2d_num)]
+        real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
         print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))
@@ -380,11 +381,11 @@ class NetAdaptPruner(Pruner):
             #### Need to be changed ####
             task_times_rank = np.array([8, 7, 9, 6, 5, 4, 34, 35, 33, 32, 31, 3, 30, 27, 26, 29, 28, 24, 25, 19, 20, 22, 23, 21, 14, 13, 12, 18, 17, 15, 16, 11, 10, 2, 0, 1])
             current_latency = 84.5171
-            current_accuracy = 0.7312 # the accuracy from the recent 20 trial fine-tune
+            current_accuracy = 0.7312
             current_accuracy_5 = 0.91366
             total_estimated_latency = 104.3329
-            init_short_acc = 0.90534
-            initial_latency = 107.3350
+            init_short_acc = 0.90534           # the initial Top-5 accuracy (one time revision)
+            initial_latency = 107.3350         # the initial latency w/o pruning (one time revision)
             #### Fixed val ####
             target_latency = current_latency * alpha
             pruning_iteration = 0
@@ -481,6 +482,7 @@ class NetAdaptPruner(Pruner):
             file_object.write(('Process iteration {:>3}: current_accuracy = {:>8.4f}, {:>8.4f}, '
                    'current_latency = {:>8.4f}, target_resource = {:>8.4f}, total_estimated_latency = {:>8.4f}, tune_trials = {:4d} \n').format(pruning_iteration, current_accuracy, current_accuracy_5, current_latency, target_latency, total_estimated_latency, tune_trials))
             file_object.write('Current pruning_times: ' + str(pruning_times) + '\n')
+            file_object.write('Real pruning_times: ' + str(real_pruning_times) + '\n')
             file_object.close()
 
             # variable to store the info of the best layer found in this iteration
@@ -488,11 +490,11 @@ class NetAdaptPruner(Pruner):
             
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
-                pruning_times = [-1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+                real_pruning_times = [-1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
                     if pruning_times[layer_idx] > -1:
-                        target_op_sparsity = 0.5 + pruning_times[layer_idx] * (1/32)
+                        target_op_sparsity = 0.5 + real_pruning_times[layer_idx] * (1/32)
                         self._config_list_generated = self._update_config_list(
                             self._config_list_generated, wrapper.name, target_op_sparsity)
                         pruner = PRUNER_DICT[self._base_algo](copy.deepcopy(self._model_to_prune), self._config_list_generated)
@@ -673,6 +675,7 @@ class NetAdaptPruner(Pruner):
                             continue
                     #################################################################################
 
+                    real_pruning_times[wrapper_idx] = pruning_times[wrapper_idx] - 1
                     _logger.debug("updating best layer to %s...", wrapper.name)
                     best_idx = wrapper_idx
                     pass_target_latency = 1

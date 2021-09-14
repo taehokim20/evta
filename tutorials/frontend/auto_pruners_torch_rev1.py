@@ -267,7 +267,9 @@ def main(args):
     if args.speed_up:
         if args.pruner != 'AutoCompressPruner':
             if args.model == 'vgg16':
-                model = models.vgg16_bn(pretrained=True).to(device) #VGG(depth=16).to(device)
+                model = models.vgg16_bn().to(device) #VGG(depth=16).to(device)
+            elif args.model == 'resnet34':
+                model = models.resnet34().to(device)
             elif args.model == 'resnet18':
                 model = ResNet18().to(device)
             elif args.model == 'resnet50':
@@ -353,7 +355,7 @@ if __name__ == '__main__':
                         help='dataset to use, mnist, cifar10 or imagenet')
     parser.add_argument('--data-dir', type=str, default='./data_fast/',
                         help='dataset directory')
-    parser.add_argument('--model', type=str, default='vgg16',
+    parser.add_argument('--model', type=str, default='resnet34',
                         help='model to use, vgg16, resnet18 or resnet50')
     parser.add_argument('--load-pretrained-model', type=str2bool, default=False,
                         help='whether to load pretrained model')
