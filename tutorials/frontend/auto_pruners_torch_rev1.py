@@ -205,16 +205,16 @@ def main(args):
 #    result['flops']['original'] = flops
 #    result['params']['original'] = params
 
-#    accuracy, accuracy_5 = evaluator(model)
+    accuracy, accuracy_5 = evaluator(model)
 #    # VGG-16
 #    accuracy = 0.72144
 #    accuracy_5 = 0.9094
 #    # ResNet-18
 #    accuracy = 0.66818
 #    accuracy_5 = 0.9094
-    # ResNet-34
-    accuracy = 0.72014
-    accuracy_5 = 0.90534
+#    # ResNet-34
+#    accuracy = 0.72014
+#    accuracy_5 = 0.90534
     print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
     result['performance']['original'] = accuracy_5
 
