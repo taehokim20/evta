@@ -396,7 +396,7 @@ class NetAdaptPruner(Pruner):
             tune_option = auto_scheduler.TuningOptions(
                 num_measure_trials=tune_trials,
                 builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
-                runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=100000, number=10, repeat=2,),
+                runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=20, number=10, repeat=2,),
                 measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
 	        verbose=1,
                 #early_stopping=300,
@@ -449,6 +449,7 @@ class NetAdaptPruner(Pruner):
             prof_res = np.array(ftimer().results) * 1e3
             current_latency = np.mean(prof_res)
             print('ftimer_latency: ' + str(current_latency))
+            time.sleep(200)
             #################################################
         
             pruning_iteration = 1
@@ -575,7 +576,7 @@ class NetAdaptPruner(Pruner):
                 tune_option = auto_scheduler.TuningOptions(
                     num_measure_trials=tune_trials,
                     builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
-                    runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=100000, number=10, repeat=2,),
+                    runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=20, number=10, repeat=2,),
                     measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
                     #early_stopping=300,
                     num_measures_per_round = num_per_round,
@@ -708,6 +709,8 @@ class NetAdaptPruner(Pruner):
                     file_object.write('\n\n')
                     file_object.close()
                     break
+                else:
+                    time.sleep(200)
 
 #            if not best_op:
 #                # decrease pruning step
