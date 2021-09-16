@@ -493,7 +493,7 @@ class NetAdaptPruner(Pruner):
                 real_pruning_times = [-1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
-                    if pruning_times[layer_idx] > -1:
+                    if real_pruning_times[layer_idx] > -1:
                         target_op_sparsity = 0.5 + real_pruning_times[layer_idx] * (1/32)
                         self._config_list_generated = self._update_config_list(
                             self._config_list_generated, wrapper.name, target_op_sparsity)
