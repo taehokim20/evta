@@ -32,8 +32,8 @@ from nni.compression.pytorch.utils.num_param_counter import get_total_num_weight
 from .constants_pruner import PRUNER_DICT
 
 ################### TVM build part addition ###############
-from pruned_vgg_maxpool import VGG 
-from models.cifar10.resnet import ResNet18, ResNet50
+#from pruned_vgg_maxpool import VGG
+#from models.cifar10.resnet import ResNet18, ResNet50
 import torchvision.models as models
 import torch.utils.model_zoo as model_zoo
 import _pickle as cPickle
