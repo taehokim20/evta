@@ -185,7 +185,17 @@ def main(args):
     # model = ResNet50().to(device) #VGG(depth=num).to(device)
     # summary(model, (3, 32, 32)) ##
     # model.load_state_dict(torch.load('./model_trained.pth'))
-    model = models.resnet34(pretrained=True).to(device)
+    if args.model == 'vgg16':
+        model = models.vgg16(pretrained=True).to(device)
+    elif args.model == 'resnet34':
+        model = models.resnet34(pretrained=True).to(device)
+    elif args.model == 'resnet18':
+        model = models.resnet18(pretrained=True).to(device)
+    elif args.model == 'resnet50':
+        model = models.resnet50(pretrained=True).to(device)
+    elif args.model == 'mobilenetv2':
+        model = models.mobilenet_v2(pretrained=True).to(device)
+
     summary(model, (3, 224, 224)) 
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
@@ -274,6 +284,8 @@ def main(args):
                 model = ResNet18().to(device)
             elif args.model == 'resnet50':
                 model = ResNet50().to(device)
+            elif args.model =='mobilenetv2':
+                model = models.mobilenet_v2().to(device)
 
             #model.load_state_dict(torch.load(os.path.join(args.experiment_data_dir, str(num), 'model_masked.pth')))
             #masks_file = os.path.join(args.experiment_data_dir, str(num), 'mask.pth')
