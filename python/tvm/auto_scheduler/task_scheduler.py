@@ -246,6 +246,8 @@ class TaskScheduler:
 
         # task_cts[i] saves how many times task i is tuned
         self.task_cts = [0 for _ in range(len(self.tasks))]
+        self.added_round_robin = 1
+        self.added_round_robin_cts = [0 for _ in range(len(self.tasks))]
 
         # task_best_cts[i] saves the round task i found the best latency
         self.task_best_cts = [0 for _ in range(len(self.tasks))]
@@ -356,7 +358,27 @@ class TaskScheduler:
         for idx in range(len(self.tasks)): #range(1):
             # skip warming up this task if it has been tuned before (restored from the log file)
             if not self.task_cts[idx]:
+                self.added_round_robin_cts[idx] += 1
                 self._tune_task(idx)
+
+        low_criterion = sum(self.best_costs) / len(self.tasks)
+        if low_criterion > 0.01:
+            low_criterion = 0.01
+        else:
+            low_criterion = 0.005
+
+        while True:
+            over_low = 0
+            for idx in range(len(self.tasks)):
+                if self.best_costs[idx] > low_criterion:
+                    over_low = 1
+                    self.added_round_robin_cts[idx] += 1
+                    self._tune_task(idx)
+            if over_low == 0:
+                break
+
+        self.added_round_robin = 0
+
         self.best_ct = self.ct
         self.best_score = self.cur_score
 
@@ -369,14 +391,13 @@ class TaskScheduler:
         task_idx = -1        
         prev_task_idx = -1
         prev_max_val = 0
-#        repeated_times = 0
         avoid_tasks = [0 for i in range(len(self.tasks))]
         while self.ct < tune_option.num_measure_trials and len(self.dead_tasks) < len(self.tasks):
             if self.strategy == "round-robin":
                 task_idx = (task_idx + 1) % len(self.tasks)
                 while task_idx in self.dead_tasks:
                     task_idx = (task_idx + 1) % len(self.tasks)
-            ################### Taeho's addition ####################
+            ################### Longest task first  ####################
             elif self.strategy == "longest":
                 max_val = 0
                 for i in range(len(self.tasks)):
@@ -387,30 +408,19 @@ class TaskScheduler:
                     if self.best_costs[i]*self.task_weights[i] > max_val:
                         max_val = self.best_costs[i]*self.task_weights[i]
                         task_idx = i
-#                self.tasks[i].compute_dag.flop_ct / self_scheduler.best_costs[i] / 1e9)
                 if task_idx == prev_task_idx and prev_max_val - max_val < 0.00001: #0.0001:
-#                    repeated_times += 1
-#                    if repeated_times > 1:
-                    if self.best_costs[task_idx] < 0.01 or avoid_tasks[task_idx] == 2:
-                        avoid_tasks[task_idx] = 1
-                        max_val = 0
-                        for i in range(len(self.tasks)):
-                            if avoid_tasks[i] == 1:
-                                continue
-                            if i in self.dead_tasks:
-                                continue
-                            if self.best_costs[i]*self.task_weights[i] > max_val:
-                                max_val = self.best_costs[i]*self.task_weights[i]
-                                task_idx = i
-                        prev_task_idx = task_idx
-                        prev_max_val = max_val
-#                    repeated_times = 0
-                    else:
-                        avoid_tasks[task_idx] = 2
-                else:
-                    prev_task_idx = task_idx
-                    prev_max_val = max_val
-#                    repeated_times = 0
+                    avoid_tasks[task_idx] = 1
+                    max_val = 0                      
+                    for i in range(len(self.tasks)):
+                        if avoid_tasks[i] == 1:
+                            continue
+                        if i in self.dead_tasks:
+                            continue
+                        if self.best_costs[i]*self.task_weights[i] > max_val:
+                            max_val = self.best_costs[i]*self.task_weights[i]
+                            task_idx = i
+                prev_task_idx = task_idx
+                prev_max_val = max_val
             #########################################################
             elif self.strategy == "gradient":
                 gradients = []
@@ -465,8 +475,6 @@ class TaskScheduler:
                     assert grad <= 0
                     gradients.append(grad)
                 
-                print("================== gradients =========================")
-                print(gradients)
                 if max(gradients) == min(gradients):
                     task_idx = np.random.choice(len(gradients))
                 else:
@@ -474,7 +482,6 @@ class TaskScheduler:
             else:
                 raise ValueError("Invalid strategy: " + self.strategy)
 
-            print("tune_trials: " + str(self.tune_option.num_measure_trials))
             self._tune_task(task_idx)
             self._adjust_similarity_group(task_idx)
 
@@ -650,10 +657,11 @@ class PrintTableInfo(TaskSchedulerCallback):
                 else "-"
             )
 #            trials_str = "%d" % (task_scheduler.task_cts[i] * task_scheduler.num_measures_per_round)
-            if task_scheduler.task_cts[i] <= 1:
+            # if task_scheduler.task_cts[i] <= 1:
+            if task_scheduler.added_round_robin == 1:
                 trials_str = "%d" % (task_scheduler.task_cts[i] * 10)
             else:
-                trials_str = "%d" % (10 + (task_scheduler.task_cts[i] - 1) * task_scheduler.num_measures_per_round)
+                trials_str = "%d" % (10 * task_scheduler.added_round_robin_cts[i] + (task_scheduler.task_cts[i] - task_scheduler.added_round_robin_cts[i]) * task_scheduler.num_measures_per_round)
             print("| %4s | %12s | % 14s | %6s |" % (id_str, latency_str, speed_str, trials_str))
             if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
                 file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
