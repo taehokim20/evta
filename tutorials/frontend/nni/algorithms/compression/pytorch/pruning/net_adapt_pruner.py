@@ -133,6 +133,7 @@ class NetAdaptPruner(Pruner):
                  optimize_mode='maximize', base_algo='l1', sparsity_per_iteration=0.01, experiment_data_dir='./'):
         # models used for iterative pruning and evaluation
         self._model_to_prune = copy.deepcopy(model)
+        self.original_model = copy.deepcopy(model)
         self._base_algo = base_algo
 
         super().__init__(model, config_list)
@@ -535,7 +536,9 @@ class NetAdaptPruner(Pruner):
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
                 # model = ResNet50().to(device) # VGG(depth=self._num).to(device)
-                model = models.resnet34().to(device)
+                #model = models.resnet34().to(device)
+                model = self.original_model
+
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
                 m_speedup = ModelSpeedup(model, self._dummy_input, masks_file, device)
