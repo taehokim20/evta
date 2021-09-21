@@ -178,13 +178,10 @@ def main(args):
     # used to save the performance of the original & pruned & finetuned models
     result = {'flops': {}, 'params': {}, 'performance':{}}
 
-#    accuracy, accuracy_5 = evaluator(model)
-#    # VGG-16
-#    accuracy = 0.72144
-#    accuracy_5 = 0.9094
-    # ResNet-18
-    accuracy = 0.69758
-    accuracy_5 = 0.89078
+    accuracy, accuracy_5 = evaluator(model)
+#    # ResNet-18
+#    accuracy = 0.69758
+#    accuracy_5 = 0.89078
     print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
     result['performance']['original'] = accuracy_5
 
