@@ -163,7 +163,7 @@ def main(args):
 
     # model = ResNet50().to(device) #VGG(depth=16).to(device)
     # model.load_state_dict(torch.load('./model_trained.pth'))
-    model = models.resnet18(pretrained=True).to(device)
+    model = models.mobilenet_v2(pretrained=True).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
     def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
