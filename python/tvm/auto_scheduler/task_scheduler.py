@@ -367,14 +367,16 @@ class TaskScheduler:
         else:
             low_criterion = 0.005
 
+        limited_trials = 50
         while True:
             over_low = 0
             for idx in range(len(self.tasks)):
                 if self.best_costs[idx] > low_criterion:
+                    limited_trials -= 1
                     over_low = 1
                     self.added_round_robin_cts[idx] += 1
                     self._tune_task(idx)
-            if over_low == 0:
+            if over_low == 0 or limited_trials == 0:
                 break
 
         self.added_round_robin = 0
