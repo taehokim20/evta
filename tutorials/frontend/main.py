@@ -24,7 +24,7 @@ from torchsummary import summary
 from datetime import datetime
 
 def get_data(dataset, data_dir, batch_size, test_batch_size):
-    kwargs = {'num_workers': 16, 'pin_memory': True} if torch.cuda.is_available() else {
+    kwargs = {'num_workers': 1, 'pin_memory': True} if torch.cuda.is_available() else {
     }
 
     if dataset == 'cifar10':
@@ -163,7 +163,7 @@ def main(args):
 
     # model = ResNet50().to(device) #VGG(depth=16).to(device)
     # model.load_state_dict(torch.load('./model_trained.pth'))
-    model = models.mobilenet_v2(pretrained=True).to(device)
+    model = models.resnet18(pretrained=True).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
     def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
@@ -178,10 +178,10 @@ def main(args):
     # used to save the performance of the original & pruned & finetuned models
     result = {'flops': {}, 'params': {}, 'performance':{}}
 
-    accuracy, accuracy_5 = evaluator(model)
-#    # ResNet-18
-#    accuracy = 0.69758
-#    accuracy_5 = 0.89078
+#    accuracy, accuracy_5 = evaluator(model)
+    # ResNet-18
+    accuracy = 0.69758
+    accuracy_5 = 0.89078
     print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
     result['performance']['original'] = accuracy_5
 
