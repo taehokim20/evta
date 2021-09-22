@@ -396,7 +396,7 @@ class InterTuner(Pruner):
                     file_object.close()
                     continue
 
-                config_list = self._config_list_generated
+                config_list = copy.deepcopy(self._config_list_generated)
                 for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
                     wrapper = self.get_modules_wrapper()[wrapper_idx]
                     pruning_times[wrapper_idx] += 1                    
@@ -416,7 +416,7 @@ class InterTuner(Pruner):
 
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
-                model = self._original_model
+                model = copy.deepcopy(self._original_model)
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
                 m_speedup = ModelSpeedup(model, self._dummy_input, masks_file, device)
