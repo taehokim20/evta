@@ -178,10 +178,10 @@ def main(args):
     # used to save the performance of the original & pruned & finetuned models
     result = {'flops': {}, 'params': {}, 'performance':{}}
 
-#    accuracy, accuracy_5 = evaluator(model)
-    # ResNet-18
-    accuracy = 0.69758
-    accuracy_5 = 0.89078
+    accuracy, accuracy_5 = evaluator(model)
+#    # ResNet-18
+#    accuracy = 0.69758
+#    accuracy_5 = 0.89078
     print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
     result['performance']['original'] = accuracy_5
 
@@ -264,7 +264,7 @@ if __name__ == '__main__':
     # dataset and model
     parser.add_argument('--dataset', type=str, default= 'imagenet', #'cifar10',
                         help='dataset to use, mnist, cifar10 or imagenet')
-    parser.add_argument('--data-dir', type=str, default='./data_fast/',
+    parser.add_argument('--data-dir', type=str, default='./data/',
                         help='dataset directory')
     parser.add_argument('--model', type=str, default='resnet18',
                         help='model to use, vgg16, resnet18 or resnet50')

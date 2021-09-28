@@ -235,8 +235,7 @@ class PackedFuncBase(object):
             )
             != 0
         ):
-            print("Avoid get_last_ffi_error")  # Taeho checked
-#            raise get_last_ffi_error()
+            raise get_last_ffi_error()
         _ = temp_args
         _ = args
         return RETURN_SWITCH[ret_tcode.value](ret_val)

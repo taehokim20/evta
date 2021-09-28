@@ -222,7 +222,7 @@ class InterTuner(Pruner):
         beta = 0.95  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 1
+        intermediate = 0
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
