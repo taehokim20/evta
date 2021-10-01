@@ -161,9 +161,17 @@ def main(args):
     train_loader, val_loader, criterion = get_data(args.dataset, args.data_dir, args.batch_size, args.test_batch_size)
     # model, optimizer = get_trained_model_optimizer(args, device, train_loader, val_loader, criterion)
 
-    # model = ResNet50().to(device) #VGG(depth=16).to(device)
-    # model.load_state_dict(torch.load('./model_trained.pth'))
-    model = models.resnet18(pretrained=True).to(device)
+    if args.model == 'vgg16':
+        model = models.vgg16(pretrained=True).to(device)
+    elif args.model == 'resnet34':
+        model = models.resnet34(pretrained=True).to(device)
+    elif args.model == 'resnet18':
+        model = models.resnet18(pretrained=True).to(device)
+    elif args.model == 'resnet50':
+        model = models.resnet50(pretrained=True).to(device)
+    elif args.model == 'mobilenetv2':
+        model = models.mobilenet_v2(pretrained=True).to(device)
+
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
     def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
