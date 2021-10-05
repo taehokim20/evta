@@ -154,6 +154,8 @@ class InterTuner(Pruner):
                 continue
             elif 'downsample' in temp_results[n].get('name'):
                 continue
+            elif 'shortcut' in temp_results[n].get('name'):
+                continue
             else:
                 pos.append(n)
                 list_filled[n] = 1
@@ -222,23 +224,25 @@ class InterTuner(Pruner):
         beta = 0.95  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 0
+        intermediate = 1
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
         print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))
         tune_trials = (at_least_trials + num_per_round) * (conv2d_num + others_num)
+        if self._cpu_or_gpu > 1:
+            tune_trials = int(tune_trials * 1.5)
         print("tune_trials: " + str(tune_trials))
         
         if intermediate == 1:
             #### Need to be changed ####
-            task_times = [0.0038495476538461535, 0.007217634678571429, 0.0069643380000000005, 0.007217634678571429, 0.0069643380000000005, 0.001963734882352941, 0.00305797853030303, 0.0002782825265410959, 0.0021739182552878967, 0.00305797853030303, 0.0024824373375, 0.0076195382142857145, 0.00023434395287356323, 0.0020461445802118314, 0.0076195382142857145, 0.002357474197183099, 0.007823214325000001, 0.0002736856268412438, 0.003869965326923077, 0.007823214325000001]
-            task_times_rank = np.array([19, 16, 14, 11, 1, 3, 2, 4, 18, 0, 6, 9, 10, 15, 8, 13, 5, 7, 17, 12])
-            current_latency = 100 #53.0252
-            current_accuracy = 0.69758
-            current_accuracy_5 = 0.89078
-            total_estimated_latency = 52.2122
+            task_times = [0.003355579333333333, 0.003941780701298701, 0.003941014509803922, 0.003941780701298701, 0.003941014509803922, 0.0024933787499999997, 0.0035162972222222222, 0.0002131116138814016, 0.0023497913023255816, 0.0035162972222222222, 0.0024007245234375, 0.003672239954022989, 0.0002723215616554054, 0.0031157397575757575, 0.003672239954022989, 0.002607657846153846, 0.006948872233333334, 0.00034078540729166667, 0.003536541327586207, 0.006948872233333334] 
+            task_times_rank = np.array([19, 16, 1, 3, 2, 4, 14, 11, 18, 6, 9, 0, 13, 15, 5, 10, 8, 17, 12, 7])
+            current_latency = 37.9555
+            current_accuracy = 0.68328
+            current_accuracy_5 = 0.88350
+            total_estimated_latency = 42.7058
             init_short_acc = 0.89078     # the initial Top-5 accuracy (one time revision)
             initial_latency = 53.0252    # the initial latency w/o pruning (one time revision)
             #### Fixed val ####
@@ -348,7 +352,7 @@ class InterTuner(Pruner):
             
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
-                real_pruning_times = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+                real_pruning_times = [-1, 11, 8, 11, 8, -1, 0, -1, -1, 0, -1, 4, -1, -1, 4, -1, 5, -1, -1, 5]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
                     if real_pruning_times[layer_idx] > -1:
@@ -366,8 +370,8 @@ class InterTuner(Pruner):
                         for k in masks:
                             setattr(wrapper, k, masks[k])
                     layer_idx += 1
-                pruning_times = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-                pruning_iteration = 1
+                pruning_times = [3, 15, 14, 15, 14, 3, 4, 3, 3, 4, 3, 8, 3, 3, 8, 3, 100, 3, 3, 100]
+                pruning_iteration = 14
             ######################################################################
             
             cnt = 0
@@ -416,6 +420,8 @@ class InterTuner(Pruner):
 
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
+                # model = models.resnet18().to(device)
+                # copy.deepcopy(self._original_model) == models.resnet18(pretrained=True).to(device)
                 model = copy.deepcopy(self._original_model)
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
@@ -448,6 +454,8 @@ class InterTuner(Pruner):
                     if list_filled[n] == 1:
                         continue
                     elif 'downsample' in temp_results[n].get('name'):
+                        continue
+                    elif 'shortcut' in temp_results[n].get('name'):
                         continue
                     else:
                         pos.append(n)
@@ -560,12 +568,12 @@ class InterTuner(Pruner):
                     optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
                     self._short_term_fine_tuner(model_masked, optimizer, epochs=0)
                     best_acc, best_acc_5 = self._evaluator(model_masked)                        
-                    print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}'.format(wrapper.name, best_acc, best_acc_5))
+                    print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}\n'.format(wrapper.name, best_acc, best_acc_5))
+                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc, best_acc_5))
                     file_object.close()
                     file_object = open('./train_epoch.txt', 'a')
-                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.4f}, Top-5 Accuracy: {:>8.4f}\n'.format(wrapper.name, best_acc, best_acc_5))
+                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc, best_acc_5))
                     file_object.close()
                     ################ Added part to avoid excessive accuracy decrement ###############
                     if best_acc_5 < 0.99 * current_accuracy_5: #best_acc_5 < beta * init_short_acc:

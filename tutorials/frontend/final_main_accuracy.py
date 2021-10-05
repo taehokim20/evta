@@ -17,7 +17,6 @@ from models.cifar10.resnet import ResNet18, ResNet50
 import torchvision.models as models
 import torch.utils.model_zoo as model_zoo
 from inter_tuner import InterTuner
-from final_accuracy_measurement import FinalAccuracyMeasurement
 from nni.compression.pytorch import ModelSpeedup
 from nni.compression.pytorch.utils.counter import count_flops_params
 import _pickle as cPickle
@@ -132,6 +131,8 @@ def test(model, device, criterion, val_loader):
     return accuracy, accuracy_5
 
 def get_dummy_input(args, device):
+    if args.dataset == 'mnist':
+        dummy_input = torch.randn([args.test_batch_size, 1, 28, 28]).to(device)
     elif args.dataset == 'cifar10':
         dummy_input = torch.randn([args.test_batch_size, 3, 32, 32]).to(device)
     elif args.dataset == 'imagenet':
@@ -140,6 +141,8 @@ def get_dummy_input(args, device):
 
 
 def get_input_size(dataset):
+    if dataset == 'mnist':
+        input_size = (1, 1, 28, 28)
     elif dataset == 'cifar10':
         input_size = (1, 3, 32, 32)
     elif dataset == 'imagenet':
@@ -149,35 +152,15 @@ def get_input_size(dataset):
 
 def main(args):
     cpu_or_gpu = 1 #1: cpu, 2: gpu
-    file_object = open('./record_tvm.txt', 'a')
-    file_object.write('Start: {}\n'.format(datetime.now()))
-    file_object.close()
     # prepare dataset
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader, criterion = get_data(args.dataset, args.data_dir, args.batch_size, args.test_batch_size)
     # model, optimizer = get_trained_model_optimizer(args, device, train_loader, val_loader, criterion)
 
-<<<<<<< HEAD
     # model = ResNet50().to(device) #VGG(depth=16).to(device)
     # model.load_state_dict(torch.load('./model_trained.pth'))
-    if args.model == 'resnet18':
-        model = models.resnet18(pretrained=True).to(device)
-    elif args.model == 'mobilenetv2':
-        model = models.mobilenet_v2(pretrained=True).to(device)
-=======
-    if args.model == 'vgg16':
-        model = models.vgg16(pretrained=True).to(device)
-    elif args.model == 'resnet34':
-        model = models.resnet34(pretrained=True).to(device)
-    elif args.model == 'resnet18':
-        model = models.resnet18(pretrained=True).to(device)
-    elif args.model == 'resnet50':
-        model = models.resnet50(pretrained=True).to(device)
-    elif args.model == 'mobilenetv2':
-        model = models.mobilenet_v2(pretrained=True).to(device)
-
->>>>>>> aee9c7f92ed8966a5ce1de96c2f2a87e88be85cb
+    model = models.resnet18(pretrained=True).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
     def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
@@ -188,14 +171,6 @@ def main(args):
 
     def evaluator(model):
         return test(model, device, criterion, val_loader)
-
-    # used to save the performance of the original & pruned & finetuned models
-
-    accuracy, accuracy_5 = evaluator(model)
-#    # ResNet-18
-#    accuracy = 0.69758
-#    accuracy_5 = 0.89078
-    print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
 
     # module types to prune, only "Conv2d" supported for channel pruning
     if args.base_algo in ['l1', 'l2', 'fpgm']:
@@ -208,16 +183,19 @@ def main(args):
         'op_types': op_types
     }]
     dummy_input = get_dummy_input(args, device)
-    pruner = InterTuner(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
-#    pruner = FinalAccuracyMeasurement(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
+#    pruner = InterTuner(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
 
     # Pruner.compress() returns the masked model
-    model = pruner.compress()
+#    original_model = model
+#    model = pruner.compress()
+#    accuracy, accuracy_5 = evaluator(model)
+#    print('Evaluation result (masked model): %s, %s' %(accuracy, accuracy_5))
+#    result['performance']['pruned'] = accuracy_5
 
-    if args.save_model:
-        pruner.export_model(
-            os.path.join(args.experiment_data_dir, 'model_masked.pth'), os.path.join(args.experiment_data_dir, 'mask.pth'))
-        print('Masked model saved to %s' % args.experiment_data_dir)
+#    if args.save_model:
+#        pruner.export_model(
+#            os.path.join(args.experiment_data_dir, 'model_masked.pth'), os.path.join(args.experiment_data_dir, 'mask.pth'))
+#        print('Masked model saved to %s' % args.experiment_data_dir)
     
     # model speed up
     if args.speed_up:
@@ -225,17 +203,18 @@ def main(args):
         masks_file = './tmp_mask.pth'
         m_speedup = ModelSpeedup(model, dummy_input, masks_file, device)
         m_speedup.speedup_model()
+        #model.load_state_dict(torch.load('./model_fine_tuned.pth'))
 
-        torch.save(model.state_dict(),'model_speed_up.pth')
-        print('Speed up model saved to %s' % args.experiment_data_dir)
+#        torch.save(model.state_dict(),'model_speed_up.pth')
+#        print('Speed up model saved to %s' % args.experiment_data_dir)
     
     if args.fine_tune:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
         #scheduler = MultiStepLR(optimizer, milestones=[int(args.fine_tune_epochs*0.25), int(args.fine_tune_epochs*0.5)], gamma=0.1)
-        scheduler = MultiStepLR(optimizer, milestones=[1,2], gamma=0.1)
+        scheduler = MultiStepLR(optimizer, milestones=[10, 15], gamma=0.1)
         best_acc = 0
         best_acc_5 = 0
-        for epoch in range(args.fine_tune_epochs):
+        for epoch in range(20):
             train(args, model, device, train_loader, criterion, optimizer, epoch)
             scheduler.step()
             acc, acc_5 = evaluator(model)
@@ -248,9 +227,13 @@ def main(args):
     print('Evaluation result (fine tuned): %s %s' %(best_acc, best_acc_5))
     print('Fined tuned model saved to %s' % args.experiment_data_dir)
     
-    file_object = open('./record_tvm.txt', 'a')
-    file_object.write('Finish: {}\n'.format(datetime.now()))
-    file_object.close()
+#    file_object = open('./record_tvm.txt', 'a')
+#    file_object.write('Finish: {}\n'.format(datetime.now()))
+#    file_object.close()
+
+#    with open(os.path.join(args.experiment_data_dir, 'result.json'), 'w+') as f:
+#        json.dump(result, f)
+
 
 if __name__ == '__main__':
     def str2bool(s):

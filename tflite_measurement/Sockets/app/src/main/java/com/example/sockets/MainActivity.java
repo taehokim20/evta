@@ -75,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private void classifyImageHandler() {
         try {
             try {
+//                Log.d(TAG, "5");
                 classifier = new ImageClassifier(MainActivity.this);
             } catch (IOException e) {
                 e.printStackTrace();
@@ -86,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
 
             for (int i = 0; i<test_num; i++) {
                 AssetManager assetMgr = MainActivity.this.getAssets();
-                InputStream is = assetMgr.open("cat32.png");
+                InputStream is = assetMgr.open("cat224.png");
                 Bitmap bitmap = BitmapFactory.decodeStream(is);
                 message = classifier.classifyImage(bitmap);
                 bitmap.recycle();
@@ -114,12 +115,12 @@ public class MainActivity extends AppCompatActivity {
             }
 
             float total_time = 0;
-            int test_num = 128; //74;
+            int test_num = 128; // 74;
             int warm_up = 64; //10;
 
             for (int i = 0; i<test_num; i++){
                 AssetManager assetMgr = MainActivity.this.getAssets();
-                InputStream is = assetMgr.open("cat32.png");
+                InputStream is = assetMgr.open("cat224.png");
                 Bitmap bitmap = BitmapFactory.decodeStream(is);
                 message = classifier.classifyImage(bitmap);
                 bitmap.recycle();

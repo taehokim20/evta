@@ -41,7 +41,7 @@ public class ImageClassifier {
     private static final String MODEL_PATH = "model.tflite";
 
     /** Name of the label file stored in Assets. */
-    private static final String LABEL_PATH = "labels.txt";
+    private static final String LABEL_PATH = "labels_imagenet.txt"; // "labels.txt";
 
     /** Number of results to show in the UI. */
     private static final int RESULTS_TO_SHOW = 3;
@@ -51,8 +51,8 @@ public class ImageClassifier {
 
     private static final int DIM_PIXEL_SIZE = 3;
 
-    static final int DIM_IMG_SIZE_X = 32; //224;
-    static final int DIM_IMG_SIZE_Y = 32; //224;
+    static final int DIM_IMG_SIZE_X = 224;
+    static final int DIM_IMG_SIZE_Y = 224;
 
     private static final int IMAGE_MEAN = 128;
     private static final float IMAGE_STD = 128.0f;
@@ -98,13 +98,12 @@ public class ImageClassifier {
             GpuDelegate.Options delegateOptions = compatList.getBestOptionsForThisDevice();
             GpuDelegate gpuDelegate = new GpuDelegate(delegateOptions);
             options.addDelegate(gpuDelegate);
-        } else {
-            // if the GPU is not supported, run on 4 threads
-            options.setNumThreads(4);
         }
 
-        tflite = new Interpreter(loadModelFile(), options);  // GPU
-//        tflite = new Interpreter(loadModelFile()); // CPU
+//        options.setNumThreads(4); // CPU
+
+        tflite = new Interpreter(loadModelFile(), options);
+//        tflite = new Interpreter(loadModelFile()); // last version CPU
         labelList = loadLabelList(activity);
         imgData =
                 ByteBuffer.allocateDirect(
@@ -184,7 +183,9 @@ public class ImageClassifier {
     /** Memory-map the model file in Assets. */
     private MappedByteBuffer loadModelFile() throws IOException {
         // Download from link
-        String fileURL = "https://www.dropbox.com/s/ne2f7opuhmt33r3/model_speed_up.tflite?dl=1";
+        String fileURL = "https://www.dropbox.com/s/84dh6ac29j0e1yp/mobilenetv2_imagenet.tflite?dl=1";
+                // "https://www.dropbox.com/s/tyxfnk486yzwrm7/resnet18_imagenet.tflite?dl=1";
+                // "https://www.dropbox.com/s/pm2cvdkazct3igw/resnet18_cifar10.tflite?dl=1";
 
         String Save_Path;
         String File_Name = "model.tflite";
