@@ -224,7 +224,7 @@ class InterTuner(Pruner):
         beta = 0.95  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 1
+        intermediate = 0
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
@@ -560,6 +560,7 @@ class InterTuner(Pruner):
                     file_object.close()
                 ###############################################################################
 
+                time.sleep(200)
                 if temp_latency <= target_latency:
                     file_object = open('./train_epoch.txt', 'a')
                     file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
