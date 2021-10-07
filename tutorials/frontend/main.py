@@ -17,7 +17,7 @@ from models.cifar10.resnet import ResNet18, ResNet50
 import torchvision.models as models
 import torch.utils.model_zoo as model_zoo
 from inter_tuner import InterTuner
-from final_accuracy_measurement import FinalAccuracyMeasurement
+#from only_compile_inter_tuner import InterTuner
 from nni.compression.pytorch import ModelSpeedup
 from nni.compression.pytorch.utils.counter import count_flops_params
 import _pickle as cPickle
@@ -158,18 +158,12 @@ def main(args):
     train_loader, val_loader, criterion = get_data(args.dataset, args.data_dir, args.batch_size, args.test_batch_size)
     # model, optimizer = get_trained_model_optimizer(args, device, train_loader, val_loader, criterion)
 
-
-    if args.model == 'vgg16':
-        model = models.vgg16(pretrained=True).to(device)
-    elif args.model == 'resnet34':
-        model = models.resnet34(pretrained=True).to(device)
-    elif args.model == 'resnet18':
+    # model = ResNet50().to(device) #VGG(depth=16).to(device)
+    # model.load_state_dict(torch.load('./model_trained.pth'))
+    if args.model == 'resnet18':
         model = models.resnet18(pretrained=True).to(device)
-    elif args.model == 'resnet50':
-        model = models.resnet50(pretrained=True).to(device)
     elif args.model == 'mobilenetv2':
         model = models.mobilenet_v2(pretrained=True).to(device)
-
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
 
     def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
@@ -182,12 +176,17 @@ def main(args):
         return test(model, device, criterion, val_loader)
 
     # used to save the performance of the original & pruned & finetuned models
+    result = {'flops': {}, 'params': {}, 'performance':{}}
 
-    accuracy, accuracy_5 = evaluator(model)
+#    accuracy, accuracy_5 = evaluator(model)
 #    # ResNet-18
 #    accuracy = 0.69758
 #    accuracy_5 = 0.89078
+    # MobileNet-v2
+    accuracy = 0.71878
+    accuracy_5 = 0.90286
     print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
+    result['performance']['original'] = accuracy_5
 
     # module types to prune, only "Conv2d" supported for channel pruning
     if args.base_algo in ['l1', 'l2', 'fpgm']:
@@ -201,10 +200,12 @@ def main(args):
     }]
     dummy_input = get_dummy_input(args, device)
     pruner = InterTuner(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
-#    pruner = FinalAccuracyMeasurement(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
 
     # Pruner.compress() returns the masked model
     model = pruner.compress()
+#    accuracy, accuracy_5 = evaluator(model)
+#    print('Evaluation result (masked model): %s, %s' %(accuracy, accuracy_5))
+#    result['performance']['pruned'] = accuracy_5
 
     if args.save_model:
         pruner.export_model(
@@ -218,8 +219,8 @@ def main(args):
         m_speedup = ModelSpeedup(model, dummy_input, masks_file, device)
         m_speedup.speedup_model()
 
-        torch.save(model.state_dict(),'model_speed_up.pth')
-        print('Speed up model saved to %s' % args.experiment_data_dir)
+#        torch.save(model.state_dict(),'model_speed_up.pth')
+#        print('Speed up model saved to %s' % args.experiment_data_dir)
     
     if args.fine_tune:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
@@ -239,10 +240,15 @@ def main(args):
 
     print('Evaluation result (fine tuned): %s %s' %(best_acc, best_acc_5))
     print('Fined tuned model saved to %s' % args.experiment_data_dir)
+    result['performance']['finetuned'] = best_acc_5
     
     file_object = open('./record_tvm.txt', 'a')
     file_object.write('Finish: {}\n'.format(datetime.now()))
     file_object.close()
+
+    with open(os.path.join(args.experiment_data_dir, 'result.json'), 'w+') as f:
+        json.dump(result, f)
+
 
 if __name__ == '__main__':
     def str2bool(s):
@@ -259,9 +265,9 @@ if __name__ == '__main__':
     # dataset and model
     parser.add_argument('--dataset', type=str, default= 'imagenet', #'cifar10',
                         help='dataset to use, mnist, cifar10 or imagenet')
-    parser.add_argument('--data-dir', type=str, default='./data_fast/',
+    parser.add_argument('--data-dir', type=str, default='./data/',
                         help='dataset directory')
-    parser.add_argument('--model', type=str, default='resnet18',
+    parser.add_argument('--model', type=str, default='mobilenetv2',
                         help='model to use, vgg16, resnet18 or resnet50')
     parser.add_argument('--load-pretrained-model', type=str2bool, default=False,
                         help='whether to load pretrained model')
