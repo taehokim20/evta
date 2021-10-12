@@ -224,7 +224,8 @@ class InterTuner(Pruner):
         beta = 0.95  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 0
+        special_num = 0
+        intermediate = 1
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
@@ -237,12 +238,14 @@ class InterTuner(Pruner):
         
         if intermediate == 1:
             #### Need to be changed ####
-            task_times = [0.0035948840444444442, 0.006203862666666667, 0.006457576823870968, 0.006203862666666667, 0.006457576823870968, 0.002088679987341772, 0.0030519973842195545, 0.00023593293049327353, 0.0027410623378378383, 0.0030519973842195545, 0.0030152224264705877, 0.004153058448979592, 0.0002728062380952381, 0.0025164091, 0.004153058448979592, 0.0025866328717948717, 0.0069165721724137935, 0.00028346014872262766, 0.0036868809464285714, 0.0069165721724137935] 
-            task_times_rank = np.array([-1, -1, 2, 4, 1, 3, 14, 11, 18, 0, 6, 9, 10, 8, 15, 13, 5, 17, 12, 7])
-            current_latency = 46.6176
-            current_accuracy = 0.69976
-            current_accuracy_5 = 0.89218
-            total_estimated_latency = 47.8050
+            special_num = 0
+            task_times = [0.002642181592105263, 0.0014190437598253273, 0.0013258007782426778, 0.0014190437598253273, 0.0013258007782426778, 0.0024703514999999997, 0.0030035994528301883, 0.00024957312910798125, 0.0025520525873015875, 0.0030035994528301883, 0.001382023890410959, 0.0028008459473684213, 0.00026884701305057094, 0.001571903, 0.0028008459473684213, 0.001947704019230769, 0.0054341052702702695, 0.00033586850947368423, 0.003561578103448276, 0.0054341052702702695]
+            #task_times_rank = np.array([19, 16, 18, 6, 9, 14, 11, 0, 8, 5, 15, 13, 3, 1, 10, 4, 2, 17, 12, 7])
+            task_times_rank = np.array([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 17, 12, 7])
+            current_latency = 27.6427
+            current_accuracy = 0.66860
+            current_accuracy_5 = 0.87220
+            total_estimated_latency = 30.9655
             init_short_acc = 0.89078     # the initial Top-5 accuracy (one time revision)
             initial_latency = 53.0252    # the initial latency w/o pruning (one time revision)
             #### Fixed val ####
@@ -285,7 +288,6 @@ class InterTuner(Pruner):
 #            print(conv2d_layer_chs)
         
             #################### Compile ####################
-            
             print("Compile...")
             with auto_scheduler.ApplyHistoryBest(log_file):
                 with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
@@ -353,11 +355,17 @@ class InterTuner(Pruner):
             
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
-                real_pruning_times = [-1, -1, 0, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, 0]
+                real_pruning_times = [17, 21, 9, 21, 9, -1, 0, -1, -1, 0, 9, 3, -1, 9, 3, -1, 0, 5, -1, 0]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
                     if real_pruning_times[layer_idx] > -1:
-                        target_op_sparsity = (1 + real_pruning_times[layer_idx]) * (1/32)
+                        #target_op_sparsity = (1 + real_pruning_times[layer_idx]) * (1/32)
+                        pruned_unit = int(conv2d_layer_chs[layer_idx] * (1/32))
+                        if pruned_unit <= 2:
+                            pruned_unit = 2
+                        elif pruned_unit % 4 != 0:
+                            pruned_unit += 4 - (pruned_unit % 4)
+                        target_op_sparsity = (1 + real_pruning_times[layer_idx]) * pruned_unit * (1/conv2d_layer_chs[layer_idx])
                         self._config_list_generated = self._update_config_list(
                             self._config_list_generated, wrapper.name, target_op_sparsity)
                         pruner = PRUNER_DICT[self._base_algo](copy.deepcopy(self._model_to_prune), self._config_list_generated, dependency_aware=True, dummy_input=self._dummy_input)
@@ -371,8 +379,8 @@ class InterTuner(Pruner):
                         for k in masks:
                             setattr(wrapper, k, masks[k])
                     layer_idx += 1
-                pruning_times = [0, 3, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0, 100]
-                pruning_iteration = 3
+                pruning_times = [26, 25, 24, 25, 24, 100, 100, 12, 18, 100, 18, 100, 13, 22, 100, 100, 100, 11, 100, 100]
+                pruning_iteration = 19
             ######################################################################
             
             cnt = 0
@@ -400,8 +408,8 @@ class InterTuner(Pruner):
                     pruned_unit += 4 - (pruned_unit % 4)
                 target_op_sparsity = (1 + pruning_times[task_times_rank[init_cnt]]) * pruned_unit * (1/conv2d_layer_chs[task_times_rank[init_cnt]])
                 ch_num = int(conv2d_layer_chs[task_times_rank[init_cnt]] * (1 - target_op_sparsity))
-                
-                if target_op_sparsity > 0.95:
+
+                if target_op_sparsity > 0.8:
                     print('Improper Layer')
                     wrapper = self.get_modules_wrapper()[task_times_rank[init_cnt]]
                     file_object = open('./record_tvm.txt', 'a')      
@@ -428,6 +436,8 @@ class InterTuner(Pruner):
 
                 # added 0: speed_up
                 pruner.export_model('./model_masked.pth', './mask.pth')
+                # model = models.resnet18().to(device)
+                # copy.deepcopy(self._original_model) == models.resnet18(pretrained=True).to(device)
                 model = copy.deepcopy(self._original_model)
                 model.load_state_dict(torch.load('./model_masked.pth'))
                 masks_file = './mask.pth'
@@ -500,6 +510,10 @@ class InterTuner(Pruner):
                     for i in range(task_weights[idx]):
                         layer_tasks_temp[pos[pos_idx]] = idx
                         pos_idx += 1
+                tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
+                if self._cpu_or_gpu > 1:
+                    tune_trials = int(tune_trials * 1.5)
+                print("tune_trials: " + str(tune_trials))
                 #################### Tuning #####################
                 print("Begin tuning...")
                 tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="longest")
@@ -518,32 +532,35 @@ class InterTuner(Pruner):
                 task_times_rank_temp = np.argsort(task_times_temp)
                 task_times_rank_temp = np.flip(task_times_rank_temp)
                 #################### Compile ####################
-                print("Compile...")
-                with auto_scheduler.ApplyHistoryBest(log_file):
-                    with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
-                        if self._cpu_or_gpu == 1:
-                            lib = relay.build(mod, target=target, params=params)
-                        else:
-                            lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
-         
-                tmp = utils.tempdir()
-                lib_fname = tmp.relpath("net.so")
-                lib.export_library(lib_fname, ndk.create_shared)
-                remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=200)
-                remote.upload(lib_fname)
-                rlib = remote.load_module("net.so")
-                if self._cpu_or_gpu == 1:
-                    ctx = remote.cpu()
+                if special_num == 1:
+                    temp_latency = 37.2004
                 else:
-                    ctx = remote.cl()
-                module = graph_executor.GraphModule(rlib["default"](ctx))
+                    print("Compile...")
+                    with auto_scheduler.ApplyHistoryBest(log_file):
+                        with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
+                            if self._cpu_or_gpu == 1:
+                                lib = relay.build(mod, target=target, params=params)
+                            else:
+                                lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
+         
+                    tmp = utils.tempdir()
+                    lib_fname = tmp.relpath("net.so")
+                    lib.export_library(lib_fname, ndk.create_shared)
+                    remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=200)
+                    remote.upload(lib_fname)
+                    rlib = remote.load_module("net.so")
+                    if self._cpu_or_gpu == 1:
+                        ctx = remote.cpu()
+                    else:
+                        ctx = remote.cl()
+                    module = graph_executor.GraphModule(rlib["default"](ctx))
 
-                data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
-                module.set_input(input_name, data_tvm)
-                ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)#, min_repeat_ms=500)
-                prof_res = np.array(ftimer().results) * 1e3
-                temp_latency = np.mean(prof_res)
-                print('ftimer_latency: ' + str(temp_latency))
+                    data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
+                    module.set_input(input_name, data_tvm)
+                    ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)#, min_repeat_ms=500)
+                    prof_res = np.array(ftimer().results) * 1e3                
+                    temp_latency = np.mean(prof_res)
+                    print('ftimer_latency: ' + str(temp_latency))
 
                 #################################################
                 print('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
@@ -567,18 +584,18 @@ class InterTuner(Pruner):
                 ###############################################################################
 
                 if temp_latency <= target_latency:
-                    while(True):
-                        print('Short-term fine-tune keep going (press 1): ')
-                        x = int(input())
-                        if x == 1:
-                            break
                     file_object = open('./train_epoch.txt', 'a')
                     file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
                     file_object.close()
-                    # Short-term fine tune the pruned model
-                    optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
-                    self._short_term_fine_tuner(model_masked, optimizer, epochs=0)
-                    best_acc, best_acc_5 = self._evaluator(model_masked)                        
+                    if special_num == 1:
+                        best_acc = 0.68344
+                        best_acc_5 = 0.88252
+                        special_num = 0
+                    else:
+                        # Short-term fine tune the pruned model
+                        optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
+                        self._short_term_fine_tuner(model_masked, optimizer, epochs=0)
+                        best_acc, best_acc_5 = self._evaluator(model_masked)                        
                     print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
                     file_object = open('./record_tvm.txt', 'a')
                     file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc, best_acc_5))
@@ -587,7 +604,7 @@ class InterTuner(Pruner):
                     file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc, best_acc_5))
                     file_object.close()
                     ################ Added part to avoid excessive accuracy decrement ###############
-                    if best_acc_5 < 0.99 * current_accuracy_5: #best_acc_5 < beta * init_short_acc:
+                    if best_acc_5 < 0.995 * current_accuracy_5: #best_acc_5 < beta * init_short_acc:
                         file_object = open('./record_tvm.txt', 'a')
                         file_object.write('Too low short-term accuracy! Improper layer: {}\n'.format(wrapper.name))
                         file_object.close()
@@ -634,7 +651,7 @@ class InterTuner(Pruner):
                     file_object.close()
                     break
                 else:
-                    time.sleep(200)
+                    time.sleep(250)
 
             if pass_target_latency == 1:
                 for wrapper_idx in prev_task_times_rank[init_cnt: init_cnt + overlap_num]:
