@@ -17,7 +17,6 @@
 # pylint: disable=invalid-name
 
 """ The task scheduler that allocates the time resources when tuning multiple tasks together
-
 The details of the "gradient" strategy below can be found in the section 6 of this paper:
 L. Zheng, C. Jia, M. Sun, Z. Wu, C. Yu, et al. "Ansor : Generating High-Performance Tensor
 Programs for Deep Learning." (OSDI 2020).
@@ -51,7 +50,6 @@ def make_search_policies(
 ):
     """Make a list of search policies for a list of search tasks.
     It creates one policy per task.
-
     Parameters
     ----------
     search_policy: Union[str, List[SearchPolicy]]
@@ -74,7 +72,6 @@ def make_search_policies(
     adapative_training: bool = False
         Option used by XGBModel to reduce the model training frequency when there're too
         many logs.
-
     Returns
     -------
     policies: List[SearchPolicy]
@@ -133,18 +130,14 @@ def make_search_policies(
 def derive_similarity_tag(dag, log_base=1.618):
     """Derive the tag for similarity check from one computational DAG.
     The DAGs with the same tag are considered as similar tasks.
-
     The tag format is <op1-tag>_<op2-tag> ... <log(flop)>.
-
     If the tag is "", then the task is not considered to be similar to any other tasks.
-
     Parameters
     ----------
     dag: ComputeDAG
         The input computational DAG
     log_base: float = 1.618
         The base of log to normalize FLOPS
-
     Returns
     -------
     tag: str
@@ -164,7 +157,6 @@ class TaskScheduler:
     """
     Allocate the time resources when tuning multiple tasks together.
     This implements two strategies: "round-robin" and "gradient".
-
     Parameters
     ----------
     tasks: List[SearchTask]
@@ -290,7 +282,6 @@ class TaskScheduler:
         per_task_early_stopping=None,
     ):
         """Tune a batch of tasks together.
-
         Parameters
         ----------
         tune_option: TuningOptions
@@ -327,11 +318,11 @@ class TaskScheduler:
         self.ct = self.best_ct = 0
         self.tic = time.time()
 
-#        # reset num_measures_per_round to make sure every task is tuned at least once
-#        self.num_measures_per_round = min(
-#            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
-#        )
-        self.num_measures_per_round = 10 #1
+        # reset num_measures_per_round to make sure every task is tuned at least once
+        self.num_measures_per_round = min(
+            tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
+        )
+        self.num_measures_per_round = 10 if self.num_measures_per_round > 10 else self.num_measures_per_round
         if self.num_measures_per_round <= 0:
             raise ValueError(
                 "num_measure_trials is too small. Please set it to a higher value."
@@ -355,12 +346,12 @@ class TaskScheduler:
         )
 
         # do a round robin first to warm up
-        for idx in range(len(self.tasks)): #range(1):
+        for idx in range(len(self.tasks)):
             # skip warming up this task if it has been tuned before (restored from the log file)
             if not self.task_cts[idx]:
                 self.added_round_robin_cts[idx] += 1
                 self._tune_task(idx)
-
+        
         low_criterion = sum(self.best_costs) / len(self.tasks)
         if low_criterion > 0.01:
             low_criterion = 0.01
@@ -380,7 +371,7 @@ class TaskScheduler:
                 break
 
         self.added_round_robin = 0
-
+        
         self.best_ct = self.ct
         self.best_score = self.cur_score
 
@@ -606,7 +597,6 @@ class TaskSchedulerCallback:
 
     def pre_tune(self, task_scheduler, task_id):
         """The callback before tuning each task.
-
         Parameters
         ----------
         task_scheduler: TaskScheduler
@@ -618,7 +608,6 @@ class TaskSchedulerCallback:
 
     def post_tune(self, task_scheduler, task_id):
         """The callback after tuning each task.
-
         Parameters
         ----------
         task_scheduler: TaskScheduler
@@ -699,7 +688,6 @@ class PrintTableInfo(TaskSchedulerCallback):
 
 class LogEstimatedLatency(TaskSchedulerCallback):
     """Log the estimated latency to the file after tuning a task.
-
     Parameters
     ----------
     log_file: str

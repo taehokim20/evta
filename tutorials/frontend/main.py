@@ -1,28 +1,34 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
 import argparse
 import os
-import time
 import json
 import torch
 import torch.utils.data
 from torch import nn
 from torch.optim.lr_scheduler import StepLR, MultiStepLR
 from torchvision import datasets, transforms
-from torchvision.transforms.functional import InterpolationMode
 import torchvision
 
-#from models.cifar10.vgg import VGG
-from models.cifar10.resnet import ResNet18, ResNet50
+from models.cifar10.vgg import VGG
+from models.cifar10.resnet import ResNet18
 import torchvision.models as models
-import torch.utils.model_zoo as model_zoo
 from inter_tuner import InterTuner
-#from only_compile_inter_tuner import InterTuner
 from nni.compression.pytorch import ModelSpeedup
 from nni.compression.pytorch.utils.counter import count_flops_params
-import _pickle as cPickle
-from torchsummary import summary
-from datetime import datetime
+
+############### TVM build part addition ##############
+import tvm 
+from tvm import relay, auto_scheduler
+import numpy as np
+import tvm.relay.testing
+from tvm.autotvm.tuner import XGBTuner
+from tvm import rpc 
+from tvm.contrib import utils, ndk, graph_runtime as runtime
+from tvm.contrib import graph_executor
+from nni.compression.pytorch.utils.counter import count_flops_params
+
+from nni.compression.pytorch import ModelSpeedup
+from torch.optim.lr_scheduler import MultiStepLR
+###########################################################
 
 def get_data(dataset, data_dir, batch_size, test_batch_size):
     kwargs = {'num_workers': 1, 'pin_memory': True} if torch.cuda.is_available() else {
@@ -49,7 +55,6 @@ def get_data(dataset, data_dir, batch_size, test_batch_size):
         criterion = torch.nn.CrossEntropyLoss()
     elif dataset == 'imagenet':
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        interpolation = InterpolationMode.BILINEAR
         train_loader = torch.utils.data.DataLoader(
             datasets.ImageFolder(os.path.join(data_dir, 'train'),
                                  transform=transforms.Compose([
@@ -94,6 +99,7 @@ def train(args, model, device, train_loader, criterion, optimizer, epoch, callba
                 100. * batch_idx / len(train_loader), loss.item()))
             file_object.close()
 
+# Top-1 and Top-5 accuracy test (ImageNet)
 def test(model, device, criterion, val_loader):
     model.eval()
     total_len = len(val_loader.dataset)
@@ -122,14 +128,38 @@ def test(model, device, criterion, val_loader):
     accuracy = correct / total_len
     accuracy_5 = correct_5 / total_len
 
-    print('\nTest set: Average loss: {:.4f}, Top-1 Accuracy: {}/{} ({:.4f}%), Top-5 Accuracy: {}/{} ({:.4f}%)\n'.format(
+    print('Test set: Average loss: {:.4f}, Top-1 Accuracy: {}/{} ({:.4f}%), Top-5 Accuracy: {}/{} ({:.4f}%)'.format(
         test_loss, correct, total_len, 100. * accuracy, correct_5, total_len, 100. * accuracy_5))
     file_object = open('./train_epoch.txt', 'a')
-    file_object.write('Test set: Average loss: {:.4f}, Top-1 Accuracy: {}/{} ({:.4f}%), Top-5 Accuracy: {}/{} ({:.4f}%)\n\n'.format(
+    file_object.write('Test set: Average loss: {:.4f}, Top-1 Accuracy: {}/{} ({:.4f}%), Top-5 Accuracy: {}/{} ({:.4f}%)\n'.format(
         test_loss, correct, total_len, 100. * accuracy, correct_5, total_len, 100. * accuracy_5))
     file_object.close()
 
     return accuracy, accuracy_5
+
+# Only top-1 accuracy test (CIFAR-10)
+def test_top1(model, device, criterion, val_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += criterion(output, target).item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+    test_loss /= len(val_loader.dataset)
+    accuracy = correct / len(val_loader.dataset)
+
+    print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+        test_loss, correct, len(val_loader.dataset), 100. * accuracy))
+    file_object = open('./train_epoch.txt', 'a')
+    file_object.write('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        test_loss, correct, len(val_loader.dataset), 100. * accuracy))
+    file_object.close()
+
+    return accuracy
 
 def get_dummy_input(args, device):
     if args.dataset == 'cifar10':
@@ -149,44 +179,42 @@ def get_input_size(dataset):
 
 def main(args):
     cpu_or_gpu = 1 #1: cpu, 2: gpu
-    file_object = open('./record_tvm.txt', 'a')
-    file_object.write('Start: {}\n'.format(datetime.now()))
-    file_object.close()
     # prepare dataset
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader, criterion = get_data(args.dataset, args.data_dir, args.batch_size, args.test_batch_size)
-    # model, optimizer = get_trained_model_optimizer(args, device, train_loader, val_loader, criterion)
 
-    # model = ResNet50().to(device) #VGG(depth=16).to(device)
-    # model.load_state_dict(torch.load('./model_trained.pth'))
-    if args.model == 'resnet18':
+    # ResNet18 for CIFAR-10
+    if args.model == 'resnet18' and args.dataset == 'cifar10':
+        model = ResNet18().to(device) #VGG(depth=16).to(device)
+        model.load_state_dict(torch.load('./model_trained.pth'))
+    # torchvision models for ImageNet
+    elif args.model == 'resnet18':
         model = models.resnet18(pretrained=True).to(device)
     elif args.model == 'mobilenetv2':
         model = models.mobilenet_v2(pretrained=True).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4) # lr=1e-4
+    elif args.model == 'mnasnet1_0':
+        model = models.mnasnet1_0(pretrained=True).to(device)
+    
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
 
-    def short_term_fine_tuner(model, optimizer=optimizer, epochs=1):
+    def short_term_trainer(model, optimizer=optimizer, epochs=1):
         train(args, model, device, train_loader, criterion, optimizer, epochs)
-
-    def trainer(model, optimizer, criterion, epoch, callback):
-        return train(args, model, device, train_loader, criterion, optimizer, epoch=epoch, callback=callback)
 
     def evaluator(model):
         return test(model, device, criterion, val_loader)
 
-    # used to save the performance of the original & pruned & finetuned models
-    result = {'flops': {}, 'params': {}, 'performance':{}}
+    def evaluator_top1(model):
+        return test_top1(model, device, criterion, val_loader)
 
-#    accuracy, accuracy_5 = evaluator(model)
-#    # ResNet-18
-#    accuracy = 0.69758
-#    accuracy_5 = 0.89078
-    # MobileNet-v2
-    accuracy = 0.71878
-    accuracy_5 = 0.90286
-    print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
-    result['performance']['original'] = accuracy_5
+    # ImageNet
+    if args.dataset == 'imagenet':
+        accuracy, accuracy_5 = evaluator(model)
+        print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
+    # CIFAR-10
+    elif args.dataset == 'cifar10':
+        accuracy = evaluator_top1(model)
+        print('Original model - Top-1 Accuracy: %s' %(accuracy))
 
     # module types to prune, only "Conv2d" supported for channel pruning
     if args.base_algo in ['l1', 'l2', 'fpgm']:
@@ -199,57 +227,122 @@ def main(args):
         'op_types': op_types
     }]
     dummy_input = get_dummy_input(args, device)
-    pruner = InterTuner(model, config_list, short_term_fine_tuner=short_term_fine_tuner, evaluator=evaluator, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu)
+    input_size = get_input_size(args.dataset)
+    pruner = InterTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset)
 
     # Pruner.compress() returns the masked model
     model = pruner.compress()
-#    accuracy, accuracy_5 = evaluator(model)
-#    print('Evaluation result (masked model): %s, %s' %(accuracy, accuracy_5))
-#    result['performance']['pruned'] = accuracy_5
 
-    if args.save_model:
-        pruner.export_model(
-            os.path.join(args.experiment_data_dir, 'model_masked.pth'), os.path.join(args.experiment_data_dir, 'mask.pth'))
-        print('Masked model saved to %s' % args.experiment_data_dir)
-    
     # model speed up
     if args.speed_up:
         model.load_state_dict(torch.load('./tmp_model.pth'))
         masks_file = './tmp_mask.pth'
         m_speedup = ModelSpeedup(model, dummy_input, masks_file, device)
         m_speedup.speedup_model()
-
-#        torch.save(model.state_dict(),'model_speed_up.pth')
-#        print('Speed up model saved to %s' % args.experiment_data_dir)
     
-    if args.fine_tune:
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
-        #scheduler = MultiStepLR(optimizer, milestones=[int(args.fine_tune_epochs*0.25), int(args.fine_tune_epochs*0.5)], gamma=0.1)
-        scheduler = MultiStepLR(optimizer, milestones=[1,2], gamma=0.1)
-        best_acc = 0
+    ################ Long-term training ################
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
+    best_acc = 0
+    if args.dataset == 'imagenet':
         best_acc_5 = 0
-        for epoch in range(args.fine_tune_epochs):
-            train(args, model, device, train_loader, criterion, optimizer, epoch)
-            scheduler.step()
+    for epoch in range(args.fine_tune_epochs): # imagenet: 20, cifar10: 100
+        train(args, model, device, train_loader, criterion, optimizer, epoch)
+        if args.dataset == 'imagenet':
             acc, acc_5 = evaluator(model)
             if acc_5 > best_acc_5:
                 best_acc_5 = acc_5
                 torch.save(model.state_dict(), os.path.join(args.experiment_data_dir, 'model_fine_tuned.pth'))
             if acc > best_acc:
                 best_acc = acc
+        elif args.dataset == 'cifar10':
+            acc = evaluator_top1(model)
+            if acc > best_acc:
+                best_acc = acc
+                torch.save(model.state_dict(), os.path.join(args.experiment_data_dir, 'model_fine_tuned.pth'))
 
-    print('Evaluation result (fine tuned): %s %s' %(best_acc, best_acc_5))
-    print('Fined tuned model saved to %s' % args.experiment_data_dir)
-    result['performance']['finetuned'] = best_acc_5
+    if args.dataset == 'imagenet':
+        print('Evaluation result (Long-term): %s %s' %(best_acc, best_acc_5))
+    elif args.dataset == 'cifar10':
+        print('Evaluation result (Long-term): %s' %(best_acc))
+    ####################################################    
+    ################ Long-term tuning and compile ################
+    if os.path.isfile('./model_fine_tuned.pth'):
+        model.load_state_dict(torch.load(os.path.join(args.experiment_data_dir, 'model_fine_tuned.pth')))
+    arch = "arm64"
+    target = "llvm -mtriple=%s-linux-android" % arch
+    device_key = "android"
+    log_file = "%s.log" % (device_key)
+    dtype = "float32"
+    use_android = True
+    at_least_trials = 10
+    num_per_round = 60
+    model.eval()
+    _, _, temp_results = count_flops_params(model, get_input_size(args.dataset))
+    input_shape = get_input_size(args.dataset)
+    input_data = torch.randn(input_shape).to(device)
+    scripted_model = torch.jit.trace(model, input_data).eval()
+    input_name = "input0"
+    shape_list = [(input_name, input_shape)]
+    mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
+    ########### NCHW -> NHWC ############
+    desired_layouts = {'nn.conv2d': ['NHWC', 'default'], 'nn.dense': ['NHWC', 'default']}
+    seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
+                          relay.transform.ConvertLayout(desired_layouts)])
+    with tvm.transform.PassContext(opt_level=3):
+        mod = seq(mod)
+    #####################################
+    tracker_host = os.environ.get("TVM_TRACKER_HOST", "0.0.0.0")
+    tracker_port = int(os.environ["TVM_TRACKER_PORT"])
+    ########### Extract search tasks ###########
+    print("Extract tasks...")
+    if cpu_or_gpu == 1:
+        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+    else:
+        tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
+    #tune_trials = 10 * (at_least_trials + num_per_round) * len(tasks)
+    tune_trials = 200
+    print("tune_trials: " + str(tune_trials))
+    ########### Tuning ###########
+    print("Begin tuning...")
+    tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")
+    tune_option = auto_scheduler.TuningOptions(
+        num_measure_trials=tune_trials,
+        builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
+        runner=auto_scheduler.RPCRunner(device_key, host=tracker_host, port=tracker_port, timeout=20, number=10, repeat=2,),
+        measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
+        num_measures_per_round = num_per_round,
+    )
+    tuner.tune(tune_option)
+    ########### Compile ###########
+    print("Compile")
+    with auto_scheduler.ApplyHistoryBest(log_file):
+        with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
+            if cpu_or_gpu == 1:
+                lib = relay.build(mod, target=target, params=params)
+            else:
+                lib = relay.build(mod, params=params, target="opencl -device=mali", target_host=target)
+
+    tmp = utils.tempdir()
+    lib_fname = tmp.relpath("net.so")
+    lib.export_library(lib_fname, ndk.create_shared)
+    remote = auto_scheduler.utils.request_remote(device_key, tracker_host, tracker_port, timeout=200)
+    remote.upload(lib_fname)
+    rlib = remote.load_module("net.so")
+    if cpu_or_gpu == 1:
+        ctx = remote.cpu()
+    else:
+        ctx = remote.cl()
+    module = graph_executor.GraphModule(rlib["default"](ctx))
+
+    data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
+    module.set_input(input_name, data_tvm)
+    ftimer = module.module.time_evaluator("run", ctx, number=10, repeat=2)
+    prof_res = np.array(ftimer().results) * 1e3
+    temp_latency = np.mean(prof_res)
+    print('ftimer_latency: ' + str(temp_latency))
+    ##############################################################
     
-    file_object = open('./record_tvm.txt', 'a')
-    file_object.write('Finish: {}\n'.format(datetime.now()))
-    file_object.close()
-
-    with open(os.path.join(args.experiment_data_dir, 'result.json'), 'w+') as f:
-        json.dump(result, f)
-
-
+ 
 if __name__ == '__main__':
     def str2bool(s):
         if isinstance(s, bool):
@@ -260,28 +353,22 @@ if __name__ == '__main__':
             return False
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-    parser = argparse.ArgumentParser(description='PyTorch Example for SimulatedAnnealingPruner')
+    parser = argparse.ArgumentParser(description='InterTuner arguments')
 
     # dataset and model
-    parser.add_argument('--dataset', type=str, default= 'imagenet', #'cifar10',
-                        help='dataset to use, mnist, cifar10 or imagenet')
+    parser.add_argument('--dataset', type=str, default= 'cifar10', #'imagenet',
+                        help='dataset to use, cifar10 or imagenet')
     parser.add_argument('--data-dir', type=str, default='./data/',
                         help='dataset directory')
-    parser.add_argument('--model', type=str, default='mobilenetv2',
-                        help='model to use, vgg16, resnet18 or resnet50')
-    parser.add_argument('--load-pretrained-model', type=str2bool, default=False,
-                        help='whether to load pretrained model')
-    parser.add_argument('--pretrained-model-dir', type=str, default='./',
-                        help='path to pretrained model')
-    parser.add_argument('--pretrain-epochs', type=int, default=2,
-                        help='number of epochs to pretrain the model')
+    parser.add_argument('--model', type=str, default='resnet18',
+                        help='model to use, resnet18, mobilenetv2, mnasnet1_0')
     parser.add_argument('--batch-size', type=int, default=64,
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1, #64
                         help='input batch size for testing (default: 64)')
     parser.add_argument('--fine-tune', type=str2bool, default=True,
                         help='whether to fine-tune the pruned model')
-    parser.add_argument('--fine-tune-epochs', type=int, default=3,
+    parser.add_argument('--fine-tune-epochs', type=int, default=1,
                         help='epochs to fine tune')
     parser.add_argument('--experiment-data-dir', type=str, default='./',
                         help='For saving experiment data')
@@ -291,22 +378,13 @@ if __name__ == '__main__':
                         help='base pruning algorithm. level, l1, l2, or fpgm')
     parser.add_argument('--sparsity', type=float, default=0.1,
                         help='target overall target sparsity')
-    # param for SimulatedAnnealingPruner
-    parser.add_argument('--cool-down-rate', type=float, default=0.9,
-                        help='cool down rate')
-    # param for NetAdaptPruner
-    parser.add_argument('--sparsity-per-iteration', type=float, default=0.05,
-                        help='sparsity_per_iteration of NetAdaptPruner')
-
-    # speed-up
-    parser.add_argument('--speed-up', type=str2bool, default=True,
-                        help='Whether to speed-up the pruned model')
 
     # others
     parser.add_argument('--log-interval', type=int, default=1000, #200,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--save-model', type=str2bool, default=True,
-                        help='For Saving the current Model')
+    # speed-up
+    parser.add_argument('--speed-up', type=str2bool, default=True,
+                        help='Whether to speed-up the pruned model')
 
     args = parser.parse_args()
 
