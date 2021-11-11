@@ -120,7 +120,9 @@ class InterTuner(Pruner):
         downsample_layers = []
         temp_results_len = len(temp_results)
         for idx in range(temp_results_len):
-            if 'downsample' or 'shortcut' in temp_results[idx].get('name'):
+            if 'downsample' in temp_results[idx].get('name'):
+                downsample_layers.append(idx)
+            elif 'shortcut' in temp_results[idx].get('name'):
                 downsample_layers.append(idx)
             if temp_results[idx].get('module_type') == 'Conv2d':
                 conv2d_num+=1
@@ -145,7 +147,9 @@ class InterTuner(Pruner):
             n = conv2d_num - 1 - idx
             if list_filled[n] == 1:
                 continue
-            elif 'downsample' or 'shortcut' in temp_results[n].get('name'):
+            elif 'downsample' in temp_results[n].get('name'):
+                continue
+            elif 'shortcut' in temp_results[n].get('name'):
                 continue
             else:
                 pos.append(n)
@@ -214,26 +218,25 @@ class InterTuner(Pruner):
         beta = 0.995  # prev_acc
         init_short_acc = 0
         performance = 0
-        check_num = 0       # must be deleted after checking
         intermediate = 1
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
         print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))       
-        #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
-        tune_trials = 200
-        print("tune_trials: " + str(tune_trials))
+        #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)        
+        #print("tune_trials: " + str(tune_trials))
+        tune_trials = 55
         
         if intermediate == 1:
             #### Need to be changed ####
-            task_times = [8.72036570537802e-05, 0.0006369310793650794, 0.0008122693930817611, 0.0006369310793650794, 0.0008122693930817611, 0.0002453032028397566, 0.0003566781369047619, 7.377202925402243e-05, 0.0006398383620689655, 0.0008054922741935484, 0.0006745825026455027, 0.0009097560683453238, 8.366241794600318e-05, 0.0006774171276041666, 0.00041778377187500003, 0.0008837840000000001, 0.0011423668333333335, 0.00010566169658430231, 0.0009486257172413792, 0.0009457512166666667]
-            task_times_rank = np.array([16,18,19,11,15,2,4,9,13,10,8,3,1,14,6,5,17,0,12,7])
-            current_latency = 50 #10.4221
-            current_accuracy = 0.91 #0.9271
-            total_estimated_latency = 10.4469
-            init_short_acc = 0.9437     # the initial Top-5 accuracy (one time revision)
-            initial_latency = 26.7254    # the initial latency w/o pruning (one time revision)
+            task_times = [0.00453337396, 0.001025385673553719, 0.0006743148040201005, 0.001498711082352941, 0.0009591122629629631, 0.0005373515271493213, 0.007379430821428572, 0.001251809205263158, 0.0024176473333333334, 0.007379430821428572, 0.001251809205263158, 0.0024176473333333334, 0.007379430821428572, 0.0010564038285714285, 0.0009531341895424837, 0.00848283203125, 0.0008828133771043771, 0.0010821372155172414, 0.00848283203125, 0.0008828133771043771, 0.0010821372155172414, 0.0011666296706349206, 0.0004596699820143885, 0.002785966794642857, 0.02449863290625, 0.0008109164049844237, 0.002404261150442478, 0.02449863290625, 0.0008109164049844237, 0.002404261150442478, 0.02449863290625, 0.00032260132710280377, 0.0013509981513157895, 0.0165049999375, 0.0003816999515625, 0.003101164135135135, 0.0165049999375, 0.0004953596820083682, 0.0006462519999999999, 0.00912006248, 0.005032636283333334, 0.0017109828857142855, 0.00912006248, 0.005032636283333334, 0.0017109828857142855, 0.00912006248, 0.005032636283333334, 0.0017109828857142855, 0.00912006248, 0.0002923849516908212, 0.001484318435483871, 0.0011766082394957984]
+            task_times_rank = np.array([30, 24, 27, 36, 33, 48, 39, 45, 42, 15, 18,  6,  9, 12, 40, 46, 43,  0, 35, 23,  8, 11, 29, 26, 41, 44, 47,  3, 50, 32,  7, 10, 51, 21, 17, 20, 13,  1,  4, 14, 19, 16, 25, 28,  2, 38,  5, 37, 22, 34, 31, 49])
+            current_latency = 49.7897
+            current_accuracy = 0.91510
+            total_estimated_latency = 78.7722
+            init_short_acc = 0.91510     # the initial accuracy (one time revision)
+            initial_latency = 109.4241    # the initial latency w/o pruning (one time revision)
             #### Fixed val ####
             target_latency = current_latency * alpha
             pruning_iteration = 0
@@ -241,7 +244,7 @@ class InterTuner(Pruner):
         else:
             #################### Tuning #####################
             print("Begin tuning...")
-            tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")        
+            tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="longest")
             tune_option = auto_scheduler.TuningOptions(
                 num_measure_trials=tune_trials,
                 builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
@@ -304,8 +307,10 @@ class InterTuner(Pruner):
             file_object = open('./record_tvm.txt', 'a')
             file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}\n'.format(budget, current_latency, total_estimated_latency))
             file_object.close()
-            accuracy = self._evaluator(self._model_to_prune)
-            current_accuracy = accuracy
+            if self._dataset == 'cifar10':
+                current_accuracy = self._evaluator(self._model_to_prune)                
+            elif self._dataset == 'imagenet':
+                _, current_accuracy = self._evaluator(self._model_to_prune)
             target_latency = current_latency * alpha
 
         # stop condition
@@ -331,7 +336,7 @@ class InterTuner(Pruner):
             
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
-                real_pruning_times = [8, 23, 21, 23, 21, 21, 9, 9, -1, 9, 0, 3, 3, 18, -1, 10, 17, 3, 13, 1]
+                real_pruning_times = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, -1, -1, 1, -1, -1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
                 layer_idx = 0
                 for wrapper in self.get_modules_wrapper():
                     if real_pruning_times[layer_idx] > -1:
@@ -354,8 +359,8 @@ class InterTuner(Pruner):
                         for k in masks:
                             setattr(wrapper, k, masks[k])
                     layer_idx += 1
-                pruning_times = [9, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]
-                pruning_iteration = 90
+                pruning_times = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                pruning_iteration = 3
             ######################################################################
             
             cnt = 0
@@ -438,7 +443,9 @@ class InterTuner(Pruner):
                     n = conv2d_num - 1 - idx
                     if list_filled[n] == 1:
                         continue
-                    elif 'downsample' or 'shortcut' in temp_results[n].get('name'):
+                    elif 'downsample' in temp_results[n].get('name'):
+                        continue
+                    elif 'shortcut' in temp_results[n].get('name'):
                         continue
                     else:
                         pos.append(n)
@@ -478,8 +485,8 @@ class InterTuner(Pruner):
                         layer_tasks_temp[pos[pos_idx]] = idx
                         pos_idx += 1
                 #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
-                tune_trials = 200
-                print("tune_trials: " + str(tune_trials))
+                #print("tune_trials: " + str(tune_trials))
+                tune_trials = 55
                 #################### Tuning #####################
                 print("Begin tuning...")
                 tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")
@@ -565,15 +572,25 @@ class InterTuner(Pruner):
                             acc = self._evaluator(model_masked)
                             if acc > best_acc:
                                 best_acc = acc
-                    print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc))
-                    file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f} \n'.format(wrapper.name, best_acc))
-                    file_object.close()
-                    file_object = open('./train_epoch.txt', 'a')
-                    file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc))
-                    file_object.close()
+                    if self._dataset == 'cifar10':
+                        print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc))
+                        file_object = open('./record_tvm.txt', 'a')
+                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f} \n'.format(wrapper.name, best_acc))
+                        file_object.close()
+                        file_object = open('./train_epoch.txt', 'a')
+                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc))
+                        file_object.close()
+                    elif self._dataset == 'imagenet':
+                        print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
+                        file_object = open('./record_tvm.txt', 'a')
+                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
+                        file_object.close()
+                        file_object = open('./train_epoch.txt', 'a')
+                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
+                        file_object.close()
                     ################ Added part to avoid excessive accuracy decrement ###############
-                    if best_acc < beta * current_accuracy: 
+                    temp_acc = best_acc_5 if self._dataset == 'imagenet' else best_acc
+                    if temp_acc < beta * current_accuracy: 
                         file_object = open('./record_tvm.txt', 'a')
                         file_object.write('Too low short-term accuracy! Improper layer: {}\n'.format(wrapper.name))
                         file_object.close()
@@ -596,7 +613,7 @@ class InterTuner(Pruner):
                         'sparsity': target_op_sparsity,
                         'ch_num': ch_num,
                         'latency': temp_latency,
-                        'performance': best_acc,
+                        'performance': temp_acc,
                         'masks': masks
                     }
 
@@ -617,7 +634,6 @@ class InterTuner(Pruner):
                     file_object.write(str(np.argsort(task_times_rank) + 1))
                     file_object.write('\n\n')
                     file_object.close()
-                    check_num = 1         # must be deleted after checking
                     break
                 else:
                     time.sleep(250)
@@ -640,12 +656,10 @@ class InterTuner(Pruner):
                 file_object = open('./record_tvm.txt', 'a')
                 file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f} \n'.format(budget, best_op['latency']))
 
-                current_accuracy = best_acc
+                current_accuracy = temp_acc
                 #########################
                 file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
                 file_object.close()
-            if check_num == 1:       # must be deleted after checking
-                break                # must be deleted after checking
             pruning_iteration += 1
 
         # load weights parameters
