@@ -240,7 +240,8 @@ class InterTuner(Pruner):
             #### Fixed val ####
             target_latency = current_latency * alpha
             pruning_iteration = 0
-            budget = 0.1 * initial_latency
+            final_latency_goal = 0.1 * initial_latency
+            minimum_acc_requirement = 0.95 * init_short_acc
         else:
             #################### Tuning #####################
             print("Begin tuning...")
@@ -302,19 +303,20 @@ class InterTuner(Pruner):
             time.sleep(250)
             #################################################        
             pruning_iteration = 1
-            budget = 0.1 * current_latency
+            final_latency_goal = 0.1 * current_latency
             print('Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}'.format(current_latency, total_estimated_latency))
             file_object = open('./record_tvm.txt', 'a')
-            file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}\n'.format(budget, current_latency, total_estimated_latency))
+            file_object.write('final_latency_goal: {:>8.4f}, Current latency: {:>8.4f}, Total estimated latency: {:>8.4f}\n'.format(final_latency_goal, current_latency, total_estimated_latency))
             file_object.close()
             if self._dataset == 'cifar10':
                 current_accuracy = self._evaluator(self._model_to_prune)                
             elif self._dataset == 'imagenet':
                 _, current_accuracy = self._evaluator(self._model_to_prune)
+            minimum_acc_requirement = 0.95 * current_accuracy
             target_latency = current_latency * alpha
 
         # stop condition
-        while pruning_iteration < max_iter and current_latency > budget:
+        while pruning_iteration < max_iter and current_latency > final_latency_goal:
             # calculate target sparsity of this iteration
             if pass_target_latency == 1:
                 target_latency = current_latency * alpha
@@ -638,6 +640,10 @@ class InterTuner(Pruner):
                 else:
                     time.sleep(250)
 
+            # Check the minimum accuracy requirement
+            if beta * best_op['performance'] < minimum_acc_requirement:
+                break
+
             if pass_target_latency == 1:
                 for wrapper_idx in prev_task_times_rank[init_cnt: init_cnt + overlap_num]:
                     wrapper = self.get_modules_wrapper()[wrapper_idx]
@@ -652,9 +658,9 @@ class InterTuner(Pruner):
 
                 # update weights parameters
                 self._model_to_prune.load_state_dict(torch.load(self._tmp_model_path))
-                print('Budget: {:>8.4f}, Current latency: {:>8.4f}'.format(budget, best_op['latency']))
+                print('final_latency_goal: {:>8.4f}, Current latency: {:>8.4f}'.format(final_latency_goal, best_op['latency']))
                 file_object = open('./record_tvm.txt', 'a')
-                file_object.write('Budget: {:>8.4f}, Current latency: {:>8.4f} \n'.format(budget, best_op['latency']))
+                file_object.write('final_latency_goal: {:>8.4f}, Current latency: {:>8.4f} \n'.format(final_latency_goal, best_op['latency']))
 
                 current_accuracy = temp_acc
                 #########################
