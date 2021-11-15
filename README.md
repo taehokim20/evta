@@ -1,4 +1,4 @@
-# InterTune: Interlocked Tuning DNN Model and Compiler for a Fast DNN Execution
+# CTune: Compiler-Informed Model Tuning for Fast DNN Execution
 
 Our source code is based on an open deep learning compiler stack Apache TVM (https://github.com/apache/tvm) and Microsoft nni (https://github.com/microsoft/nni).
 
@@ -88,3 +88,7 @@ Our source code is based on an open deep learning compiler stack Apache TVM (htt
 23. python3 -m tvm.exec.rpc_tracker --host=0.0.0.0 --port=9192
 ### RPC connection check
 24. (new terminal) python3 -m tvm.exec.query_rpc_tracker --host=0.0.0.0 --port=9192
+
+
+# How to execute
+In tutorials/frontend, there are two core 
