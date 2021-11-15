@@ -91,4 +91,6 @@ Our source code is based on an open deep learning compiler stack Apache TVM (htt
 
 
 # How to execute
-In tutorials/frontend, there are two core 
+In tutorials/frontend, there are two core files main.py and c_tuner.py. <br>
+You can select an input model and type the accuracy requirement in main.py, and run the file.
+If you want to look at the CTune algorithm code, please look at c_tuner.py.
