@@ -29,7 +29,7 @@ from nni.compression.pytorch import ModelSpeedup
 from torch.optim.lr_scheduler import MultiStepLR
 ###########################################################
 
-class InterTuner(Pruner):
+class CTuner(Pruner):
     '''
     Pruning the pre-trained model by utilizing measured latency from executable tuning
     

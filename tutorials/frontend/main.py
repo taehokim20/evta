@@ -11,7 +11,7 @@ import torchvision
 from models.cifar10.vgg import VGG
 from models.cifar10.resnet import ResNet18
 import torchvision.models as models
-from inter_tuner import InterTuner
+from c_tuner import CTuner
 from nni.compression.pytorch import ModelSpeedup
 from nni.compression.pytorch.utils.counter import count_flops_params
 
@@ -231,7 +231,7 @@ def main(args):
     }]
     dummy_input = get_dummy_input(args, device)
     input_size = get_input_size(args.dataset)
-    pruner = InterTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset)
+    pruner = CTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset)
 
     # Pruner.compress() returns the masked model
     model = pruner.compress()
@@ -356,7 +356,7 @@ if __name__ == '__main__':
             return False
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-    parser = argparse.ArgumentParser(description='InterTuner arguments')
+    parser = argparse.ArgumentParser(description='CTuner arguments')
 
     # dataset and model
     parser.add_argument('--dataset', type=str, default= 'imagenet',
