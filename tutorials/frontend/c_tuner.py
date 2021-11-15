@@ -46,7 +46,7 @@ class CTuner(Pruner):
     evaluator : function
         function to evaluate the masked model
     '''
-    def __init__(self, model, config_list, short_term_trainer, evaluator, val_loader, dummy_input, criterion, base_algo='l1', experiment_data_dir='./', cpu_or_gpu=1, input_size=(1, 3, 224, 224), dataset='imagenet'):
+    def __init__(self, model, config_list, short_term_trainer, evaluator, val_loader, dummy_input, criterion, base_algo='l1', experiment_data_dir='./', cpu_or_gpu=1, input_size=(1, 3, 224, 224), dataset='imagenet', acc_requirement=0.85):
         # models used for iterative pruning and evaluation
         self._model_to_prune = copy.deepcopy(model)
         self._original_model = copy.deepcopy(model)
@@ -73,6 +73,7 @@ class CTuner(Pruner):
         self._dummy_input = dummy_input
         self._input_size = input_size
         self._dataset = dataset
+        self._acc_requirement = acc_requirement
 
     def _update_config_list(self, config_list, op_name, sparsity):
         '''
@@ -218,15 +219,14 @@ class CTuner(Pruner):
         beta = 0.995  # prev_acc
         init_short_acc = 0
         performance = 0
-        intermediate = 1
+        intermediate = 0
         pruning_times = [0 for i in range(conv2d_num)]
         real_pruning_times = [-1 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
         print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))       
-        #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)        
-        #print("tune_trials: " + str(tune_trials))
-        tune_trials = 55
+        tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)        
+        print("tune_trials: " + str(tune_trials))
         
         if intermediate == 1:
             #### Need to be changed ####
@@ -241,7 +241,7 @@ class CTuner(Pruner):
             target_latency = current_latency * alpha
             pruning_iteration = 0
             final_latency_goal = 0.1 * initial_latency
-            minimum_acc_requirement = 0.95 * init_short_acc
+            minimum_acc_requirement = self._acc_requirement
         else:
             #################### Tuning #####################
             print("Begin tuning...")
@@ -312,7 +312,7 @@ class CTuner(Pruner):
                 current_accuracy = self._evaluator(self._model_to_prune)                
             elif self._dataset == 'imagenet':
                 _, current_accuracy = self._evaluator(self._model_to_prune)
-            minimum_acc_requirement = 0.95 * current_accuracy
+            minimum_acc_requirement = self._acc_requirement
             target_latency = current_latency * alpha
 
         # stop condition
@@ -486,9 +486,8 @@ class CTuner(Pruner):
                     for i in range(task_weights[idx]):
                         layer_tasks_temp[pos[pos_idx]] = idx
                         pos_idx += 1
-                #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
-                #print("tune_trials: " + str(tune_trials))
-                tune_trials = 55
+                tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
+                print("tune_trials: " + str(tune_trials))                
                 #################### Tuning #####################
                 print("Begin tuning...")
                 tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")

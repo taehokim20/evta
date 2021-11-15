@@ -195,6 +195,8 @@ def main(args):
         model = models.mobilenet_v2(pretrained=True).to(device)
     elif args.model == 'mnasnet1_0':
         model = models.mnasnet1_0(pretrained=True).to(device)
+
+    acc_requirement = args.accuracy_requirement;
     
     optimizer = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)
 
@@ -231,7 +233,7 @@ def main(args):
     }]
     dummy_input = get_dummy_input(args, device)
     input_size = get_input_size(args.dataset)
-    pruner = CTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset)
+    pruner = CTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset, acc_requirement=acc_requirement)
 
     # Pruner.compress() returns the masked model
     model = pruner.compress()
@@ -359,6 +361,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CTuner arguments')
 
     # dataset and model
+    parser.add_argument('--accuracy-requirement', type=float, default=0.85,
+                        help='the minimum accuracy requirement')
     parser.add_argument('--dataset', type=str, default= 'imagenet',
                         help='dataset to use, cifar10 or imagenet')
     parser.add_argument('--data-dir', type=str, default='./data_fast/',
