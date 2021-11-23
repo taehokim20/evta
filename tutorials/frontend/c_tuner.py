@@ -245,7 +245,7 @@ class CTuner(Pruner):
         else:
             #################### Tuning #####################
             print("Begin tuning...")
-            tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="longest")
+            tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
             tune_option = auto_scheduler.TuningOptions(
                 num_measure_trials=tune_trials,
                 builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
@@ -490,7 +490,7 @@ class CTuner(Pruner):
                 print("tune_trials: " + str(tune_trials))                
                 #################### Tuning #####################
                 print("Begin tuning...")
-                tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")
+                tuner = auto_scheduler.TaskScheduler(tasks, task_weights, target_execution_time=target_latency)
                 tune_option = auto_scheduler.TuningOptions(
                     num_measure_trials=tune_trials,
                     builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),

@@ -202,6 +202,7 @@ class TaskScheduler:
         task_weights=None,
         objective_func=None,
         strategy="gradient",
+        target_execution_time=0,
         load_model_file: str = None,
         load_log_file: str = None,
         alpha: float = 0.2,
@@ -221,6 +222,7 @@ class TaskScheduler:
                 self.objective_func = sum
 
         self.strategy = strategy
+        self.target_execution_time = target_execution_time
         self.load_log_file = load_log_file
         self.load_model_file = load_model_file
         self.alpha = alpha
@@ -386,6 +388,8 @@ class TaskScheduler:
         prev_max_val = 0
         avoid_tasks = [0 for i in range(len(self.tasks))]
         while self.ct < tune_option.num_measure_trials and len(self.dead_tasks) < len(self.tasks):
+            if self.target_execution_time > 0 and self.cur_score * 1e3 < self.target_execution_time:
+                self.strategy = "longest"
             if self.strategy == "round-robin":
                 task_idx = (task_idx + 1) % len(self.tasks)
                 while task_idx in self.dead_tasks:
