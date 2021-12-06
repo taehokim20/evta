@@ -683,11 +683,6 @@ class PrintTableInfo(TaskSchedulerCallback):
             file_object.write("Estimated total latency: %s ms\tTrials: %d\tUsed time : %.0f s\tNext ID: %d\t\n"
             % (total_latency_str, task_scheduler.ct, time.time() - task_scheduler.tic, task_id,))
         file_object.close()
-        ############ Taeho addition ###############
-#        if
-#        file_object = open('./record_tvm.txt', 'a')
-#        file_object.write('Used time: {:8.4f} s, '.format(time.time() - task_scheduler.tic))
-        ###########################################
 
 
 class LogEstimatedLatency(TaskSchedulerCallback):
