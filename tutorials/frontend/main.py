@@ -304,8 +304,7 @@ def main(args):
         tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
     else:
         tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
-    #tune_trials = 10 * (at_least_trials + num_per_round) * len(tasks)
-    tune_trials = 200
+    tune_trials = 10 * (at_least_trials + num_per_round) * len(tasks)
     print("tune_trials: " + str(tune_trials))
     ########### Tuning ###########
     print("Begin tuning...")
