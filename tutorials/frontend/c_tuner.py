@@ -343,8 +343,8 @@ class CTuner(Pruner):
                 for wrapper in self.get_modules_wrapper():
                     if real_pruning_times[layer_idx] > -1:
                         pruned_unit = int(conv2d_layer_chs[layer_idx] * (1/32))
-                        if pruned_unit <= 2:
-                            pruned_unit = 2
+                        if pruned_unit <= 4:
+                            pruned_unit = 4
                         elif pruned_unit % 4 != 0:
                             pruned_unit += 4 - (pruned_unit % 4)
                         target_op_sparsity = (1 + real_pruning_times[layer_idx]) * pruned_unit * (1/conv2d_layer_chs[layer_idx])
@@ -383,8 +383,8 @@ class CTuner(Pruner):
                 cnt += 1
                     
                 pruned_unit = int(conv2d_layer_chs[task_times_rank[init_cnt]] * (1/32))
-                if pruned_unit <= 2:
-                    pruned_unit = 2
+                if pruned_unit <= 4:
+                    pruned_unit = 4
                 elif pruned_unit % 4 != 0:
                     pruned_unit += 4 - (pruned_unit % 4)
                 target_op_sparsity = (1 + pruning_times[task_times_rank[init_cnt]]) * pruned_unit * (1/conv2d_layer_chs[task_times_rank[init_cnt]])
