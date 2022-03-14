@@ -11,7 +11,7 @@ import torchvision
 from models.cifar10.vgg import VGG
 from models.cifar10.resnet import ResNet18
 import torchvision.models as models
-from c_tuner import CTuner
+from c_pruner import CPruner
 from nni.compression.pytorch import ModelSpeedup
 from nni.compression.pytorch.utils.counter import count_flops_params
 
@@ -183,7 +183,6 @@ def main(args):
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_loader, val_loader, criterion = get_data(args.dataset, args.data_dir, args.batch_size, args.test_batch_size)
-
     # ResNet18 for CIFAR-10
     if args.model == 'resnet18' and args.dataset == 'cifar10':
         model = ResNet18().to(device) #VGG(depth=16).to(device)
@@ -208,19 +207,20 @@ def main(args):
 
     def evaluator_top1(model):
         return test_top1(model, device, criterion, val_loader)
-
     # ImageNet
     if args.dataset == 'imagenet':
         #accuracy, accuracy_5 = evaluator(model)
-        # MnasNet1_0
-        accuracy = 0.73456
-        accuracy_5 = 0.91510
+        # ResNet-18
+        accuracy = 0.69758
+        accuracy_5 = 0.89078
+        ## MnasNet1_0
+        #accuracy = 0.73456
+        #accuracy_5 = 0.91510
         print('Original model - Top-1 Accuracy: %s, Top-5 Accuracy: %s' %(accuracy, accuracy_5))
     # CIFAR-10
     elif args.dataset == 'cifar10':
         accuracy = evaluator_top1(model)
         print('Original model - Top-1 Accuracy: %s' %(accuracy))
-
     # module types to prune, only "Conv2d" supported for channel pruning
     if args.base_algo in ['l1', 'l2', 'fpgm']:
         op_types = ['Conv2d']
@@ -232,9 +232,8 @@ def main(args):
         'op_types': op_types
     }]
     dummy_input = get_dummy_input(args, device)
-    input_size = get_input_size(args.dataset)
-    pruner = CTuner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset, acc_requirement=acc_requirement)
-
+    input_size = get_input_size(args.dataset)    
+    pruner = CPruner(model, config_list, short_term_trainer=short_term_trainer, evaluator=evaluator if args.dataset == 'imagenet' else evaluator_top1, val_loader=val_loader, dummy_input=dummy_input, criterion=criterion, base_algo=args.base_algo, experiment_data_dir=args.experiment_data_dir, cpu_or_gpu=cpu_or_gpu, input_size=input_size, dataset=args.dataset, acc_requirement=acc_requirement)
     # Pruner.compress() returns the masked model
     model = pruner.compress()
 
@@ -308,7 +307,7 @@ def main(args):
     print("tune_trials: " + str(tune_trials))
     ########### Tuning ###########
     print("Begin tuning...")
-    tuner = auto_scheduler.TaskScheduler(tasks, task_weights, strategy="gradient")
+    tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
     tune_option = auto_scheduler.TuningOptions(
         num_measure_trials=tune_trials,
         builder=auto_scheduler.LocalBuilder(build_func="ndk" if use_android else "default"),
@@ -366,7 +365,7 @@ if __name__ == '__main__':
                         help='dataset to use, cifar10 or imagenet')
     parser.add_argument('--data-dir', type=str, default='./data_fast/',
                         help='dataset directory')
-    parser.add_argument('--model', type=str, default='mnasnet1_0',
+    parser.add_argument('--model', type=str, default='resnet18',
                         help='model to use, resnet18, mobilenetv2, mnasnet1_0')
     parser.add_argument('--batch-size', type=int, default=64,
                         help='input batch size for training (default: 64)')
@@ -374,7 +373,7 @@ if __name__ == '__main__':
                         help='input batch size for testing (default: 64)')
     parser.add_argument('--fine-tune', type=str2bool, default=True,
                         help='whether to fine-tune the pruned model')
-    parser.add_argument('--fine-tune-epochs', type=int, default=1,
+    parser.add_argument('--fine-tune-epochs', type=int, default=20,
                         help='epochs to fine tune')
     parser.add_argument('--experiment-data-dir', type=str, default='./',
                         help='For saving experiment data')

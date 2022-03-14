@@ -17,6 +17,7 @@
 # pylint: disable=invalid-name
 
 """ The task scheduler that allocates the time resources when tuning multiple tasks together
+
 The details of the "gradient" strategy below can be found in the section 6 of this paper:
 L. Zheng, C. Jia, M. Sun, Z. Wu, C. Yu, et al. "Ansor : Generating High-Performance Tensor
 Programs for Deep Learning." (OSDI 2020).
@@ -50,6 +51,7 @@ def make_search_policies(
 ):
     """Make a list of search policies for a list of search tasks.
     It creates one policy per task.
+
     Parameters
     ----------
     search_policy: Union[str, List[SearchPolicy]]
@@ -72,6 +74,7 @@ def make_search_policies(
     adapative_training: bool = False
         Option used by XGBModel to reduce the model training frequency when there're too
         many logs.
+
     Returns
     -------
     policies: List[SearchPolicy]
@@ -130,14 +133,18 @@ def make_search_policies(
 def derive_similarity_tag(dag, log_base=1.618):
     """Derive the tag for similarity check from one computational DAG.
     The DAGs with the same tag are considered as similar tasks.
+
     The tag format is <op1-tag>_<op2-tag> ... <log(flop)>.
+
     If the tag is "", then the task is not considered to be similar to any other tasks.
+
     Parameters
     ----------
     dag: ComputeDAG
         The input computational DAG
     log_base: float = 1.618
         The base of log to normalize FLOPS
+
     Returns
     -------
     tag: str
@@ -157,6 +164,7 @@ class TaskScheduler:
     """
     Allocate the time resources when tuning multiple tasks together.
     This implements two strategies: "round-robin" and "gradient".
+
     Parameters
     ----------
     tasks: List[SearchTask]
@@ -258,6 +266,12 @@ class TaskScheduler:
         self.num_measures_per_round = None
         self.dead_tasks = set()
 
+        # Pruning filters
+        self.best_measure_inputs = []
+        self.core = {}
+        self.output = {}
+        self.prune_num = {}
+
         # Build similarity groups
         self.task_tags = []  # task_id -> tag
         self.tag_to_group_id = {}  # tag -> group_id
@@ -284,6 +298,7 @@ class TaskScheduler:
         per_task_early_stopping=None,
     ):
         """Tune a batch of tasks together.
+
         Parameters
         ----------
         tune_option: TuningOptions
@@ -348,7 +363,7 @@ class TaskScheduler:
         )
 
         # do a round robin first to warm up
-        for idx in range(len(self.tasks)):
+        for idx in range(len(self.tasks)): #range(1):
             # skip warming up this task if it has been tuned before (restored from the log file)
             if not self.task_cts[idx]:
                 self.added_round_robin_cts[idx] += 1
@@ -381,7 +396,7 @@ class TaskScheduler:
         self.num_measures_per_round = min(
             tune_option.num_measures_per_round, tune_option.num_measure_trials // len(self.tasks)
         )
-
+    
         # use the specific strategy to choose workload to tune
         task_idx = -1        
         prev_task_idx = -1
@@ -498,8 +513,106 @@ class TaskScheduler:
             elif all(avoid > 0 for avoid in avoid_tasks):
                 if self.tune_option.verbose >= 1:
                     print("All tasks finished tuning")
-                break
+                break      
 
+        core_key = {}
+        output_keys = {}
+        for i in range(len(self.best_measure_inputs)):
+            init_state = self.best_measure_inputs[i].task.compute_dag.init_state
+            for j in range(len(init_state.stages)):
+                if str(init_state.stages[j].op.name) == "Conv2dOutput" or str(init_state.stages[j].op.name) == "inverse":
+                    self.core[i] = {}
+                    self.output[i] = {}
+                    output_keys[i] = []
+            for j in range(len(init_state.stages)):
+                if str(init_state.stages[j].op.name) == "Conv2dOutput" or str(init_state.stages[j].op.name) == "inverse":
+                    init_stage = init_state.stages[j]
+                    key_idx = 0
+                    for k in range(len(init_stage.iters)):
+                        init_iter = init_stage.iters[k]
+                        if int(init_iter.range.extent) > 1:
+                            if key_idx == 2:
+                                core_key[i] = str(init_iter.name)
+                            self.core[i][str(init_iter.name)] = int(init_iter.range.extent)
+                            key_idx += 1
+                if str(init_state.stages[j].op.name) == "conv2d_winograd" or str(init_state.stages[j].op.name) == "T_relu" or (i in self.output and j == len(init_state.stages) - 1):
+                    init_stage = init_state.stages[j]
+                    key_idx = 0
+                    for k in range(len(init_stage.iters)):
+                        init_iter = init_stage.iters[k]
+                        if int(init_iter.range.extent) > 1:
+                            output_keys[i].append(str(init_iter.name))
+                            self.output[i][str(init_iter.name)] = int(init_iter.range.extent)
+                            key_idx += 1
+                    if core_key[i] != "ff":
+                        core_key[i] = output_keys[i][2]
+                    break  
+
+        for i in range(len(self.best_measure_inputs)):
+            cand1 = []
+            cand2 = []
+            state = self.best_measure_inputs[i].state
+            for j in range(len(state.stages)):
+                stage = state.stages[j]
+                if str(state.stages[j].op.name) == "Conv2dOutput" or str(state.stages[j].op.name) == "inverse":
+                    for k in range(len(stage.iters)):
+                        temp_split = str(stage.iters[k].name).split(".")[0]
+                        if temp_split == core_key[i]:
+                            temp_range = int(stage.iters[k].range.extent)
+                            if temp_range > 1:
+                                cand1.append(temp_range)
+                            if temp_split in self.core[i]:
+                                if self.core[i][temp_split] / temp_range == 1:
+                                    del self.core[i][temp_split]
+                                else:
+                                    self.core[i][temp_split] /= temp_range
+                    if core_key[i] in self.core[i]:
+                        cand1.append(int(self.core[i][core_key[i]]))
+                if str(state.stages[j].op.name) == "conv2d_winograd" or str(state.stages[j].op.name) == "T_relu" or (i in self.output and j == len(state.stages) - 1):
+                    for k in reversed(range(len(stage.iters))):
+                        if k != 0:
+                            temp_split = str(stage.iters[k].name).split(".")[0]
+                            if temp_split not in output_keys[i] and temp_split != "ax3":
+                                continue
+                            temp_range = int(stage.iters[k].range.extent)
+                            if temp_range > 1:
+                                if temp_split == output_keys[i][2] or temp_split == "ax3":
+                                    cand2.append(temp_range)
+                                if self.output[i][temp_split] / temp_range == 1:
+                                    del self.output[i][temp_split]
+                                else:
+                                    self.output[i][temp_split] /= temp_range
+                        else:
+                            temp_range = int(stage.iters[k].range.extent)
+                            if output_keys[i][0] in self.output[i] and temp_range % self.output[i][output_keys[i][0]] == 0:
+                                temp_range /= self.output[i][output_keys[i][0]]
+                            if output_keys[i][1] in self.output[i] and temp_range % self.output[i][output_keys[i][1]] == 0:
+                                temp_range /= self.output[i][output_keys[i][1]]
+                            if temp_range > 1:
+                                cand2.append(int(temp_range))
+                    break
+            if bool(cand1):
+                if len(cand1) == 1:
+                    cand1.append(1)
+                if len(cand2) == 1:
+                    cand2.append(1)
+                cand1_max = 1 if cand1 == [] else max(cand1)
+                cand2_max = 1 if cand2 == [] else max(cand2)
+                cand1_result = 1
+                cnt = 1
+                for j in cand1:
+                    if j != cand1_max or cnt == 0:
+                        cand1_result *= j
+                    else:
+                        cnt = 0
+                cand2_result = 1
+                cnt = 1
+                for j in cand1:
+                    if j != cand2_max or cnt == 0:
+                        cand2_result *= j
+                    else:
+                        cnt = 0
+                self.prune_num[i] = max(cand1_result, cand2_result)
     def _tune_task(self, task_idx):
         """Tune the select task for one round"""
 
@@ -601,6 +714,7 @@ class TaskSchedulerCallback:
 
     def pre_tune(self, task_scheduler, task_id):
         """The callback before tuning each task.
+
         Parameters
         ----------
         task_scheduler: TaskScheduler
@@ -612,6 +726,7 @@ class TaskSchedulerCallback:
 
     def post_tune(self, task_scheduler, task_id):
         """The callback after tuning each task.
+
         Parameters
         ----------
         task_scheduler: TaskScheduler
@@ -630,12 +745,12 @@ class PrintTableInfo(TaskSchedulerCallback):
             return
 
         _ffi_api.PrintTitle("Task Scheduler")
-        file_object = open('./printTable.txt', 'a')
+        #file_object = open('./printTable.txt', 'a')
         print("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |")
         print("-------------------------------------------------")
-        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
-            file_object.write("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |\n")
-            file_object.write("-------------------------------------------------\n")
+        #if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
+        #    file_object.write("|  ID  | Latency (ms) | Speed (GFLOPS) | Trials |\n")
+        #    file_object.write("-------------------------------------------------\n")
 
         # content
         for i in range(len(task_scheduler.tasks)):
@@ -658,12 +773,12 @@ class PrintTableInfo(TaskSchedulerCallback):
             else:
                 trials_str = "%d" % (10 * task_scheduler.added_round_robin_cts[i] + (task_scheduler.task_cts[i] - task_scheduler.added_round_robin_cts[i]) * task_scheduler.num_measures_per_round)
             print("| %4s | %12s | % 14s | %6s |" % (id_str, latency_str, speed_str, trials_str))
-            if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
-                file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
+            #if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
+            #    file_object.write("| %4s | %12s | % 14s | %6s |\n" % (id_str, latency_str, speed_str, trials_str))
                 
         print("-------------------------------------------------")        
-        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:            
-            file_object.write("-------------------------------------------------\n")
+        #if task_scheduler.ct >= len(task_scheduler.tasks) * 10:            
+        #    file_object.write("-------------------------------------------------\n")
 
         # overall info
         if all(cost < 1e9 for cost in task_scheduler.best_costs):
@@ -679,14 +794,15 @@ class PrintTableInfo(TaskSchedulerCallback):
                 task_id,
             )
         )
-        if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
-            file_object.write("Estimated total latency: %s ms\tTrials: %d\tUsed time : %.0f s\tNext ID: %d\t\n"
-            % (total_latency_str, task_scheduler.ct, time.time() - task_scheduler.tic, task_id,))
-        file_object.close()
+        #if task_scheduler.ct >= len(task_scheduler.tasks) * 10:
+        #    file_object.write("Estimated total latency: %s ms\tTrials: %d\tUsed time : %.0f s\tNext ID: %d\t\n"
+        #    % (total_latency_str, task_scheduler.ct, time.time() - task_scheduler.tic, task_id,))
+        #file_object.close()
 
 
 class LogEstimatedLatency(TaskSchedulerCallback):
     """Log the estimated latency to the file after tuning a task.
+
     Parameters
     ----------
     log_file: str

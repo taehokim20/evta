@@ -1,4 +1,4 @@
-# CTune: Compiler-Informed Model Tuning for Fast DNN Execution
+# CPrune: Compiler-Informed Model Pruning for Efficient Target-Aware DNN Execution
 
 Our source code is based on an open deep learning compiler stack Apache TVM (https://github.com/apache/tvm) and Microsoft nni (https://github.com/microsoft/nni).
 
@@ -91,6 +91,6 @@ Our source code is based on an open deep learning compiler stack Apache TVM (htt
 
 
 # How to execute
-In tutorials/frontend, there are two core files main.py and c_tuner.py. <br>
+In tutorials/frontend, there are two core files main.py and c_pruner.py. <br>
 You can select an input model and type the accuracy requirement in main.py, and run the file.
-If you want to look at the CTune algorithm code, please look at c_tuner.py.
+If you want to look at the CPrune algorithm code, please look at c_pruner.py.
