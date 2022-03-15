@@ -118,29 +118,25 @@ class CPruner(Pruner):
         _, _, temp_results = count_flops_params(self._model_to_prune, self._input_size)
         conv2d_num = 0
         others_num = 0
-        downsample_layers = []
+        downsample_subgraphs = []
         temp_results_len = len(temp_results)
         for idx in range(temp_results_len):
             if 'downsample' in temp_results[idx].get('name'):
-                downsample_layers.append(idx)
+                downsample_subgraphs.append(idx)
             elif 'shortcut' in temp_results[idx].get('name'):
-                downsample_layers.append(idx)
+                downsample_subgraphs.append(idx)
             if temp_results[idx].get('module_type') == 'Conv2d':
                 conv2d_num+=1
             else:
                 others_num+=1
-        conv2d_layer_chs = [-1 for i in range(conv2d_num)]
+        conv2d_subgraph_chs = [-1 for i in range(conv2d_num)]
         temp_idx = 0
         for idx in range(temp_results_len):
             if temp_results[idx].get('module_type') == 'Conv2d':
-                conv2d_layer_chs[temp_idx] = temp_results[idx].get('weight_shape')[0]
+                conv2d_subgraph_chs[temp_idx] = temp_results[idx].get('weight_shape')[0]
                 temp_idx += 1
-        print("=========== conv2d_num+, chs, downsample_layers ============")
-        print(conv2d_num)
-        print(conv2d_layer_chs)
-        print(downsample_layers)
 
-        ##################### layer_task connection #######################
+        ##################### subgraph_task connection #######################
         pos = []
         last_idx = conv2d_num - 1
         list_filled = [0 for i in range(conv2d_num)]
@@ -167,9 +163,7 @@ class CPruner(Pruner):
                     pos.append(i)
                     list_filled[i] = 1
 
-        pos = pos + downsample_layers
-        print("========== pos ===============")
-        print(pos)                
+        pos = pos + downsample_subgraphs
 
         input_shape = self._input_size
         input_data = torch.randn(input_shape).to(device)
@@ -197,10 +191,7 @@ class CPruner(Pruner):
         else:
             tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
 
-        print("=========== task_weights ==============")
-        print(task_weights)
-
-        layer_tasks = [-1 for i in range(conv2d_num)]
+        subgraph_tasks = [-1 for i in range(conv2d_num)]
         task_times = [-1 for i in range(conv2d_num)]
         pos_idx = 0
         downsample_idx = 0
@@ -210,13 +201,13 @@ class CPruner(Pruner):
             if len(task.workload_key) < 80:
                 continue
             for i in range(task_weights[idx]):
-                layer_tasks[pos[pos_idx]] = idx
+                subgraph_tasks[pos[pos_idx]] = idx
                 pos_idx += 1
 
         max_iter = 100
         pass_target_latency = 0
-        alpha = 0.99  # target_latency
-        beta = 0.99  # prev_acc
+        alpha = 0.995  # target_accuracy = alpha * prev_best_accuracy
+        beta = 0.99  # target_latency = beta * current_best_latency
         init_short_acc = 0
         performance = 0
         intermediate = 0
@@ -224,14 +215,12 @@ class CPruner(Pruner):
         real_pruning_times = [0 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
-        print("conv2d_num and others_num: " + str(conv2d_num) + ", " + str(others_num))       
         tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)        
-        print("tune_trials: " + str(tune_trials))
         minimum_acc_requirement = self._acc_requirement
         
         if intermediate == 1:
             #### Need to be changed ####
-            task_times = [0.00043375010192307686, 0.0271577916, 0.012008387479999997, 0.0271577916, 0.012008387479999997, 0.01236712755, 0.0035790637874999996, 0.000666367502415459, 0.0021887810895522388, 0.0035790637874999996, 0.0026678345869565216, 0.0023516568267716535, 0.00014507431596558318, 0.00352454753125, 0.0023516568267716535, 0.0083158154375, 0.00533615834, 0.0003186792025948104, 0.00201125885, 0.0029789231750000002]
+            task_times = [0]
             task_times_rank = np.array([1,3,5,2,4,15,16,9,6,13,19,10,11,14,8,18,7,0,17,12])
             current_latency = 28.1697
             current_accuracy = 0.9430
@@ -258,8 +247,8 @@ class CPruner(Pruner):
             tuner.tune(tune_option)        
             total_estimated_latency = 0
             for i in range(conv2d_num):
-                task_times[i] = tuner.best_costs[layer_tasks[i]] * task_weights[layer_tasks[i]]
-                total_estimated_latency += tuner.best_costs[layer_tasks[i]] * 1000
+                task_times[i] = tuner.best_costs[subgraph_tasks[i]] * task_weights[subgraph_tasks[i]]
+                total_estimated_latency += tuner.best_costs[subgraph_tasks[i]] * 1000
             task_times_rank = np.argsort(task_times)
             task_times_rank = np.flip(task_times_rank)
             file_object = open('./record_tvm.txt', 'a')
@@ -312,13 +301,13 @@ class CPruner(Pruner):
                 current_accuracy = self._evaluator(self._model_to_prune)                
             elif self._dataset == 'imagenet':
                 _, current_accuracy = self._evaluator(self._model_to_prune)
-            target_latency = current_latency * alpha
+            target_latency = current_latency * beta
 
         # stop condition
         while pruning_iteration < max_iter and current_latency > budget:
             # calculate target sparsity of this iteration
             if pass_target_latency == 1:
-                target_latency = current_latency * alpha
+                target_latency = current_latency * beta
                 pass_target_latency = 0
 
             # Print the message
@@ -332,23 +321,15 @@ class CPruner(Pruner):
             file_object.write('Real pruning_times: ' + str(real_pruning_times) + '\n')
             file_object.close()
 
-            # variable to store the info of the best layer found in this iteration
+            # variable to store the info of the best subgraph found in this iteration
             best_op = {}
             
             ########################### Pre-pruning (if it is necessary) ##########################
             if pruning_iteration == 0:
                 real_pruning_times = [0]
-                layer_idx = 0
+                subgraph_idx = 0
                 for wrapper in self.get_modules_wrapper():
-                    if real_pruning_times[layer_idx] > 0:
-                        '''
-                        pruned_unit = int(conv2d_layer_chs[layer_idx] * (1/32))
-                        if pruned_unit <= 2:
-                            pruned_unit = 2
-                        elif pruned_unit % 4 != 0:
-                            pruned_unit += 4 - (pruned_unit % 4)
-                        target_op_sparsity = (1 + real_pruning_times[layer_idx]) * pruned_unit * (1/conv2d_layer_chs[layer_idx])
-                        '''
+                    if real_pruning_times[subgraph_idx] > 0:
                         target_op_sparsity = real_pruning_times[subgraph_idx]
                         self._config_list_generated = self._update_config_list(
                             self._config_list_generated, wrapper.name, target_op_sparsity)
@@ -362,7 +343,7 @@ class CPruner(Pruner):
                                 break
                         for k in masks:
                             setattr(wrapper, k, masks[k])
-                    layer_idx += 1
+                    subgraph_idx += 1
                 pruning_times = [0]
                 pruning_iteration = 12
             ######################################################################
@@ -370,9 +351,6 @@ class CPruner(Pruner):
             cnt = 0
             while cnt < len(task_times_rank):
                 init_cnt = cnt
-                #if pruning_iteration == 34 and cnt < 19:
-                #    cnt += 1
-                #    continue
                 overlap_num = 1
                 while True:
                     if cnt + 1 == len(task_times_rank):
@@ -383,23 +361,15 @@ class CPruner(Pruner):
                     else:
                         break
                 cnt += 1
-                '''
-                pruned_unit = int(conv2d_layer_chs[task_times_rank[init_cnt]] * (1/32))
-                if pruned_unit <= 4:
-                    pruned_unit = 4
-                elif pruned_unit % 4 != 0:
-                    pruned_unit += 4 - (pruned_unit % 4)
-                target_op_sparsity = (1 + pruning_times[task_times_rank[init_cnt]]) * pruned_unit * (1/conv2d_layer_chs[task_times_rank[init_cnt]])
-                ch_num = int(conv2d_layer_chs[task_times_rank[init_cnt]] * (1 - target_op_sparsity))
-                '''
-                pruning_times[task_times_rank[init_cnt]] += tuner.prune_num[task_times_rank[init_cnt]] * (1/conv2d_subgraph_chs[task_times_rank[init_cnt]])
+                for overlap_cnt in task_times_rank[init_cnt: init_cnt + overlap_num]:
+                    pruning_times[overlap_cnt] += float(tuner.prune_num[subgraph_tasks[overlap_cnt]]) * float(1/conv2d_subgraph_chs[overlap_cnt])
                 target_op_sparsity = pruning_times[task_times_rank[init_cnt]]
-                ch_num = int(conv2d_layer_chs[task_times_rank[init_cnt]] * (1 - target_op_sparsity))
+                ch_num = int(conv2d_subgraph_chs[task_times_rank[init_cnt]] * (1 - target_op_sparsity))
                 if target_op_sparsity > 0.8:
-                    print('Improper Layer')
+                    print('Improper Subgraph')
                     wrapper = self.get_modules_wrapper()[task_times_rank[init_cnt]]
                     file_object = open('./record_tvm.txt', 'a')      
-                    file_object.write('Improper Layer: ' + wrapper.name + ', Total: ' + str(overlap_num) + ' layers\n')
+                    file_object.write('Improper Subgraph: ' + wrapper.name + ', Total: ' + str(overlap_num) + ' subgraphs\n')
                     file_object.close()
                     continue
 
@@ -410,10 +380,10 @@ class CPruner(Pruner):
                     config_list = self._update_config_list(config_list, wrapper.name, target_op_sparsity)
 
                 wrapper = self.get_modules_wrapper()[task_times_rank[init_cnt]]
-                print('Layer: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num))
+                print('Subgraph: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num))
                 print(str(pruning_times))
                 file_object = open('./record_tvm.txt', 'a')
-                file_object.write('Layer: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num) + '\n')
+                file_object.write('Subgraph: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num) + '\n')
                 file_object.write('Temp_pruning_times:' + str(pruning_times) + '\n')
                 file_object.close()
 
@@ -442,7 +412,7 @@ class CPruner(Pruner):
                                       relay.transform.ConvertLayout(desired_layouts)])
                 with tvm.transform.PassContext(opt_level=3):
                     mod = seq(mod)
-                #################### layer_task connection ####################
+                #################### subgraph_task connection ####################
                 pos = []
                 last_idx = conv2d_num - 1
                 list_filled = [0 for i in range(conv2d_num)]
@@ -469,7 +439,7 @@ class CPruner(Pruner):
                             pos.append(i)
                             list_filled[i] = 1
 
-                pos = pos + downsample_layers
+                pos = pos + downsample_subgraphs
                 print("========== pos ===============")
                 print(pos)                
                 #################### Extract search tasks ###################
@@ -480,7 +450,7 @@ class CPruner(Pruner):
                     tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
                 print('============== task_weights ==============')
                 print(task_weights)
-                layer_tasks_temp = [-1 for i in range(conv2d_num)]
+                subgraph_tasks_temp = [-1 for i in range(conv2d_num)]
                 task_times_temp = [-1 for i in range(conv2d_num)]
                 pos_idx = 0
                 for idx, task in enumerate(tasks):
@@ -489,11 +459,9 @@ class CPruner(Pruner):
                     if len(task.workload_key) < 80:
                         continue
                     for i in range(task_weights[idx]):
-                        layer_tasks_temp[pos[pos_idx]] = idx
+                        subgraph_tasks_temp[pos[pos_idx]] = idx
                         pos_idx += 1
-                #tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
-                #print("tune_trials: " + str(tune_trials))
-                tune_trials = 25
+                tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)
                 #################### Tuning #####################
                 print("Begin tuning...")
                 tuner = auto_scheduler.TaskScheduler(tasks, task_weights, target_execution_time=target_latency)
@@ -507,8 +475,8 @@ class CPruner(Pruner):
                 tuner.tune(tune_option)
                 total_estimated_latency = 0
                 for i in range(conv2d_num):
-                    task_times_temp[i] = tuner.best_costs[layer_tasks_temp[i]] * task_weights[layer_tasks_temp[i]]
-                    total_estimated_latency += tuner.best_costs[layer_tasks_temp[i]] * 1000
+                    task_times_temp[i] = tuner.best_costs[subgraph_tasks_temp[i]] * task_weights[subgraph_tasks_temp[i]]
+                    total_estimated_latency += tuner.best_costs[subgraph_tasks_temp[i]] * 1000
                 task_times_rank_temp = np.argsort(task_times_temp)
                 task_times_rank_temp = np.flip(task_times_rank_temp)
                 #################### Compile ####################
@@ -539,28 +507,21 @@ class CPruner(Pruner):
                 temp_latency = np.mean(prof_res)
                 print('ftimer_latency: ' + str(temp_latency))
                 #################################################
-                print('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
+                print('Subgraph: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object = open('./record_tvm.txt', 'a')
-                file_object.write('Layer: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
+                file_object.write('Subgraph: {}, Temp latency: {:>8.4f}, Total estimated latency: {:>8.4f}, Channel: {:4d}, Next trials: {:4d}\n'.format(wrapper.name, temp_latency, total_estimated_latency, ch_num, tune_trials))
                 file_object.close()
-                ################# Added part to prune the slow layer quickly ##################
-                if temp_latency > target_latency:# and tune_trials <= tune_trials_prev:
+                ################# Added part to prune the slow subgraph quickly ##################
+                if temp_latency > target_latency:
                     file_object = open('./record_tvm.txt', 'a')
-                    file_object.write('Higher than target latency! Pruning_ratio of Layer {} increases one time more!\n'.format(wrapper.name))
-                    '''
-                    for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
-                        pruning_times[wrapper_idx] += tuner.prune_num[task_times_rank[init_cnt]] * (1/conv2d_subgraph_chs[task_times_rank[init_cnt]])
-                    if temp_latency > (1.0 / alpha) * target_latency:
-                        file_object.write('Higher than existing latency! Pruning_ratio increases one time more!\n')
-                        for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
-                            pruning_times[wrapper_idx] += tuner.prune_num[task_times_rank[init_cnt]] * (1/conv2d_subgraph_chs[task_times_rank[init_cnt]])
-                    '''
+                    file_object.write('Higher than target latency! Pruning_ratio of Subgraph {} increases one time more!\n'.format(wrapper.name))
                     file_object.close()
+                    continue
                 ###############################################################################
 
                 if temp_latency <= target_latency:
                     file_object = open('./train_epoch.txt', 'a')
-                    file_object.write('Layer: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
+                    file_object.write('Subgraph: {}, Temp latency: {:>8.4f}, Channel: {:4d}\n'.format(wrapper.name, temp_latency, ch_num))
                     file_object.close()
                     # Short-term fine tune the pruned model
                     optimizer = torch.optim.SGD(model_masked.parameters(), lr=0.0001, momentum=0.9, weight_decay=5e-4)                    
@@ -582,26 +543,20 @@ class CPruner(Pruner):
                             if acc > best_acc:
                                 best_acc = acc
                     if self._dataset == 'cifar10':
-                        print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc))
+                        print('Subgraph: {}, Short_tune - Top-1 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc))
                         file_object = open('./record_tvm.txt', 'a')
-                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f} \n'.format(wrapper.name, best_acc))
-                        file_object.close()
-                        file_object = open('./train_epoch.txt', 'a')
-                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}\n'.format(wrapper.name, best_acc))
+                        file_object.write('Subgraph: {}, Top-1 Accuracy: {:>8.5f} \n'.format(wrapper.name, best_acc))
                         file_object.close()
                     elif self._dataset == 'imagenet':
-                        print('Layer: {}, Short_tune - Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
+                        print('Subgraph: {}, Short_tune - Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
                         file_object = open('./record_tvm.txt', 'a')
-                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
-                        file_object.close()
-                        file_object = open('./train_epoch.txt', 'a')
-                        file_object.write('Layer: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
+                        file_object.write('Subgraph: {}, Top-1 Accuracy: {:>8.5f}, Top-5 Accuracy: {:>8.5f}'.format(wrapper.name, best_acc, best_acc_5))
                         file_object.close()
                     ################ Added part to avoid excessive accuracy decrement ###############
                     temp_acc = best_acc_5 if self._dataset == 'imagenet' else best_acc
-                    if temp_acc < beta * current_accuracy: 
+                    if temp_acc < alpha * current_accuracy: 
                         file_object = open('./record_tvm.txt', 'a')
-                        file_object.write('Too low short-term accuracy! Improper layer: {}\n'.format(wrapper.name))
+                        file_object.write('Too low short-term accuracy! Improper subgraph: {}\n'.format(wrapper.name))
                         file_object.close()
                         for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
                             pruning_times[wrapper_idx] = 1
@@ -609,9 +564,9 @@ class CPruner(Pruner):
                     #################################################################################
 
                     for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
-                        real_pruning_times[wrapper_idx] = pruning_times[wrapper_idx] - 1
+                        real_pruning_times[wrapper_idx] = pruning_times[wrapper_idx]
                     pass_target_latency = 1
-                    # find weight mask of this layer
+                    # find weight mask of this subgraph
                     for w in pruner.get_modules_wrapper():
                         if w.name == wrapper.name:
                             masks = {'weight_mask': w.weight_mask,
@@ -631,7 +586,7 @@ class CPruner(Pruner):
 
                     # save model weights
                     pruner.export_model(self._tmp_model_path, './tmp_mask.pth')
-                    layer_tasks = layer_tasks_temp
+                    subgraph_tasks = subgraph_tasks_temp
                     task_times = task_times_temp
                     task_times_rank = task_times_rank_temp
                     file_object = open('./record_tvm.txt', 'a')
@@ -645,10 +600,10 @@ class CPruner(Pruner):
                     file_object.close()
                     break
                 else:
-                    time.sleep(300)
+                    time.sleep(200)
 
             # Check the minimum accuracy requirement
-            if beta * best_op['performance'] < minimum_acc_requirement:
+            if alpha * best_op['performance'] < minimum_acc_requirement:
                 break
 
             if pass_target_latency == 1:
@@ -671,7 +626,7 @@ class CPruner(Pruner):
 
                 current_accuracy = temp_acc
                 #########################
-                file_object.write('Layer {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
+                file_object.write('Subgraph {} selected with {:4d} channels, latency {:>8.4f}, accuracy {:>8.4f} \n'.format(best_op['op_name'], best_op['ch_num'], best_op['latency'], best_op['performance']))
                 file_object.close()
             pruning_iteration += 1
 
