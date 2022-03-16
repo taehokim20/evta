@@ -211,8 +211,8 @@ class CPruner(Pruner):
         init_short_acc = 0
         performance = 0
         intermediate = 0
-        pruning_times = [0 for i in range(conv2d_num)]
-        real_pruning_times = [0 for i in range(conv2d_num)]
+        pruning_times = [0.0 for i in range(conv2d_num)]
+        real_pruning_times = [0.0 for i in range(conv2d_num)]
         at_least_trials = 10
         num_per_round = 60
         tune_trials = (at_least_trials + num_per_round) * len(tasks) #(conv2d_num + others_num)        
@@ -376,12 +376,10 @@ class CPruner(Pruner):
                 config_list = copy.deepcopy(self._config_list_generated)
                 for wrapper_idx in task_times_rank[init_cnt: init_cnt + overlap_num]:
                     wrapper = self.get_modules_wrapper()[wrapper_idx]
-                    pruning_times[wrapper_idx] += 1                    
                     config_list = self._update_config_list(config_list, wrapper.name, target_op_sparsity)
 
                 wrapper = self.get_modules_wrapper()[task_times_rank[init_cnt]]
                 print('Subgraph: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num))
-                print(str(pruning_times))
                 file_object = open('./record_tvm.txt', 'a')
                 file_object.write('Subgraph: ' + wrapper.name + ', overlap_num: ' + str(overlap_num) + ', ch_num: ' + str(ch_num) + '\n')
                 file_object.write('Temp_pruning_times:' + str(pruning_times) + '\n')
@@ -439,17 +437,13 @@ class CPruner(Pruner):
                             pos.append(i)
                             list_filled[i] = 1
 
-                pos = pos + downsample_subgraphs
-                print("========== pos ===============")
-                print(pos)                
+                pos = pos + downsample_subgraphs             
                 #################### Extract search tasks ###################
                 print("Extract tasks...")
                 if self._cpu_or_gpu == 1:
                     tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
                 else:
                     tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target="opencl -device=mali", target_host=target)
-                print('============== task_weights ==============')
-                print(task_weights)
                 subgraph_tasks_temp = [-1 for i in range(conv2d_num)]
                 task_times_temp = [-1 for i in range(conv2d_num)]
                 pos_idx = 0
@@ -516,7 +510,6 @@ class CPruner(Pruner):
                     file_object = open('./record_tvm.txt', 'a')
                     file_object.write('Higher than target latency! Pruning_ratio of Subgraph {} increases one time more!\n'.format(wrapper.name))
                     file_object.close()
-                    continue
                 ###############################################################################
 
                 if temp_latency <= target_latency:
@@ -600,7 +593,7 @@ class CPruner(Pruner):
                     file_object.close()
                     break
                 else:
-                    time.sleep(200)
+                    time.sleep(250)
 
             # Check the minimum accuracy requirement
             if alpha * best_op['performance'] < minimum_acc_requirement:

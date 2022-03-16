@@ -375,9 +375,11 @@ class TaskScheduler:
         else:
             low_criterion = 0.005
 
-        while True:
+        while self.ct < tune_option.num_measure_trials:
             over_low = 0
             for idx in range(len(self.tasks)):
+                if self.ct < tune_option.num_measure_trials:
+                    break
                 if self.added_round_robin_cts[idx] == 10:
                     break
                 if self.best_costs[idx] > low_criterion:
@@ -607,12 +609,13 @@ class TaskScheduler:
                         cnt = 0
                 cand2_result = 1
                 cnt = 1
-                for j in cand1:
+                for j in cand2:
                     if j != cand2_max or cnt == 0:
                         cand2_result *= j
                     else:
                         cnt = 0
                 self.prune_num[i] = max(cand1_result, cand2_result)
+
     def _tune_task(self, task_idx):
         """Tune the select task for one round"""
 
@@ -624,12 +627,21 @@ class TaskScheduler:
             self.num_measures_per_round, self.measurer
         )
         self.task_cts[task_idx] += 1
+        best_idx = -1
+        temp_idx = 0
 
         for res in measure_results:
             cost = array_mean(res.costs)
             if cost < self.best_costs[task_idx]:
+                best_idx = temp_idx
                 self.task_best_cts[task_idx] = self.task_cts[task_idx]
                 self.best_costs[task_idx] = cost
+            temp_idx += 1
+
+        if(len(self.best_measure_inputs) <= task_idx):
+            self.best_measure_inputs.append(measure_inputs[best_idx])
+        elif best_idx > -1:
+            self.best_measure_inputs[task_idx] = measure_inputs[best_idx]
 
         # Stop tuning this task in the rest of the process if its search space has been
         # fully explored or it has no improvement for a long while.
