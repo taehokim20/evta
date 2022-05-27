@@ -6,7 +6,7 @@ Our source code is based on an open deep learning compiler stack Apache TVM (htt
 ## Host PC side
 ### Install nvidia-container-runtime
 1. Add package repository \
-      curl -s -L https:/nvidia.github.io/nvidia-container-runtime/gpgkey | sudo apt-key add - \
+      curl -s -L https://nvidia.github.io/nvidia-container-runtime/gpgkey | sudo apt-key add - \
       distribution=$(. /etc/os-release; echo $ID$VERSION_ID) \
       curl -s -L https://nvidia.github.io/nvidia-container-runtime/$distribution/nvidia-container-runtime.list | \ <br/>
       sudo tee /etc/apt/sources.list.d/nvidia-container-runtime.list \
